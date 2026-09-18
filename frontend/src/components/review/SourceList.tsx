@@ -76,7 +76,7 @@ export default function SourceList({
           const citedIn = sectionsCitingSource(s.id, citingSections);
           return (
             <li key={s.id} className="text-xs flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0 break-words">
                 <a
                   href={s.url}
                   target="_blank"
@@ -110,7 +110,7 @@ export default function SourceList({
           <ul className="mt-2 space-y-2">
             {rejected.map((s) => (
               <li key={s.id} className="text-xs text-slate-400 flex items-start justify-between gap-2">
-                <span>
+                <span className="min-w-0 break-words">
                   {s.title}
                   {s.relevance_note && <span> — {s.relevance_note}</span>}
                 </span>
