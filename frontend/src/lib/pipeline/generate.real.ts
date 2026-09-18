@@ -781,7 +781,18 @@ export async function reviseDraft(
  * channel gets an asset, including newsletter — same "generated but not
  * auto-published yet" scope as mock mode (DESIGN.md §11). */
 export async function prepareChannelAssets(request: ContentRequest, draft: Draft): Promise<ChannelAsset[]> {
-  const assets = await Promise.all(
+  // Promise.allSettled rather than Promise.all (2026-09-18 — same fix as
+  // researchAndCurateSources' scrape fan-out, see DESIGN.md's Decisions
+  // Log): a request can list multiple priority channels, and each one is
+  // its own independent Anthropic call. Under Promise.all, one channel's
+  // call throwing (a transient API error, a rate limit, or the retry
+  // inside structuredCall itself giving up) failed channel prep for every
+  // OTHER channel too — including ones that had already generated
+  // successfully, wasting that cost and blocking the request from ever
+  // reaching pending_human_review over a single bad channel. This was
+  // flagged as a known, unpatched risk in the same Decisions Log entry
+  // that fixed the identical shape of bug in source scraping.
+  const results = await Promise.allSettled(
     request.priority_channels.map(async (channel) => {
       const content = await structuredCall({
         label: `channel prep (${channel})`,
@@ -816,6 +827,35 @@ export async function prepareChannelAssets(request: ContentRequest, draft: Draft
       };
     })
   );
+
+  const assets: ChannelAsset[] = [];
+  const failures: { channel: string; detail: string }[] = [];
+  results.forEach((result, i) => {
+    const channel = request.priority_channels[i];
+    if (result.status === "fulfilled") {
+      assets.push(result.value);
+    } else {
+      failures.push({ channel, detail: String(result.reason) });
+      console.error(`Channel prep failed for ${channel}: ${String(result.reason)}`);
+    }
+  });
+
+  // A total failure (every channel's call failed) almost certainly means a
+  // systemic problem — a bad API key, the model being down — not a
+  // per-channel content issue, so that case still surfaces as a thrown
+  // error the same way it always did. A PARTIAL failure isolates the bad
+  // channel instead: the request still reaches review with whichever
+  // channels succeeded, rather than losing all of them (and the API spend
+  // already made) over one. The caller can see which channels are simply
+  // absent from the returned list; there's no channel-level failure log yet
+  // (unlike scrapeFailures), which is the natural next step if this proves
+  // to matter in practice.
+  if (assets.length === 0 && failures.length > 0) {
+    throw new Error(
+      `Channel prep failed for all ${failures.length} channel(s): ` +
+        failures.map((f) => `${f.channel}: ${f.detail}`).join("; ")
+    );
+  }
 
   return assets;
 }
