@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Happy Path</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --border: #e4e4e0;
+    --text: #1f1f1d;
+    --muted: #6b6b66;
+    --accent: #2f6f4f;
+    --accent-bg: #eaf3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 40px 20px 64px;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 36px;
+    font-size: 0.95rem;
+  }
+  .steps {
+    position: relative;
+    padding-left: 36px;
+  }
+  .steps::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border);
+  }
+  .step {
+    position: relative;
+    margin-bottom: 22px;
+  }
+  .step:last-child { margin-bottom: 0; }
+  .num {
+    position: absolute;
+    left: -36px;
+    top: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card h3 {
+    margin: 0 0 4px;
+    font-size: 0.98rem;
+  }
+  .card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+  .gate {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--accent);
+    background: var(--accent-bg);
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+  .end {
+    text-align: center;
+    margin-top: 30px;
+    padding: 16px;
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Happy Path</h1>
+    <p class="subtitle">AI Content Research &amp; Publishing Agent — the request that sails through cleanly.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="card">
+          <h3>Content request submitted</h3>
+          <p>Idea/topic, target audience, optional source URL and tone.</p>
+          <span class="gate">Gate: required fields present</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="card">
+          <h3>Research &amp; retrieval</h3>
+          <p>Firecrawl scrapes the URL (or search finds 3–5 sources for a raw idea); text is chunked and embedded.</p>
+          <span class="gate">Gate: ≥1 usable source found</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="card">
+          <h3>Source curation &amp; planning</h3>
+          <p>Relevant excerpts are selected; outline built with a keyword and a source mapped to every section.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">4</div>
+        <div class="card">
+          <h3>Draft generation &amp; self-evaluation</h3>
+          <p>Article options are generated and scored against the rubric.</p>
+          <span class="gate">Gate: evaluation status = pass</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">5</div>
+        <div class="card">
+          <h3>Human review</h3>
+          <p>Reviewer sees the draft, sources, and evaluation history — and approves it.</p>
+          <span class="gate">Gate: explicit approval recorded</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">6</div>
+        <div class="card">
+          <h3>Channel adaptation</h3>
+          <p>Approved article is adapted into LinkedIn and X versions per the formatting rules.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">7</div>
+        <div class="card">
+          <h3>Publishing queue → live</h3>
+          <p>Assets land in the queue; the n8n runner claims and publishes them on schedule.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="end">✓ Published to LinkedIn and X, fully traceable back to its sources</div>
+  </div>
+</body>
+</html>

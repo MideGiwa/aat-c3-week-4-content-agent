@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Content Research &amp; Publishing Agent</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #16213c;
+    --panel-2: #1c2a4a;
+    --border: #2b3b5f;
+    --text: #eef2f9;
+    --text-dim: #a9b6d0;
+    --accent: #6366f1;
+    --accent-2: #22d3ee;
+    --amber: #f59e0b;
+    --green: #34d399;
+    --red: #f87171;
+    --shadow: 0 20px 50px rgba(0,0,0,0.35);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --panel-2: #f0f2fa;
+      --border: #dde3f0;
+      --text: #1a2240;
+      --text-dim: #5b6785;
+      --accent: #4f46e5;
+      --accent-2: #0891b2;
+      --amber: #b45309;
+      --green: #0f9d67;
+      --red: #dc2626;
+      --shadow: 0 20px 50px rgba(30,41,79,0.10);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel-2: #f0f2fa;
+    --border: #dde3f0;
+    --text: #1a2240;
+    --text-dim: #5b6785;
+    --accent: #4f46e5;
+    --accent-2: #0891b2;
+    --amber: #b45309;
+    --green: #0f9d67;
+    --red: #dc2626;
+    --shadow: 0 20px 50px rgba(30,41,79,0.10);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    height: 100%;
+  }
+
+  .deck {
+    scroll-snap-type: y mandatory;
+    overflow-y: scroll;
+    height: 100vh;
+    scroll-behavior: smooth;
+  }
+
+  .slide {
+    scroll-snap-align: start;
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6vh 8vw;
+    position: relative;
+  }
+
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-2);
+    margin: 0 0 14px 0;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 4.2vw, 3.4rem);
+    line-height: 1.1;
+    margin: 0 0 18px 0;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+
+  .lede {
+    font-size: clamp(1rem, 1.5vw, 1.2rem);
+    color: var(--text-dim);
+    max-width: 60ch;
+    margin: 0 0 40px 0;
+    line-height: 1.55;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 40px;
+    align-items: start;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 26px 28px;
+    box-shadow: var(--shadow);
+  }
+
+  .card h3 {
+    margin: 0 0 10px 0;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .card p, .card li {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+
+  .pill-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot.red { background: var(--red); }
+  .dot.amber { background: var(--amber); }
+  .dot.green { background: var(--green); }
+
+  .locked-box {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--amber);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-top: 20px;
+  }
+  .locked-box strong { color: var(--amber); }
+
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: step;
+  }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 14px 0 14px 46px;
+    border-bottom: 1px solid var(--border);
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .steps li b { color: var(--text); font-size: 0.98rem; }
+
+  .callout {
+    margin-top: 26px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 22px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    box-shadow: var(--shadow);
+  }
+  .callout .badge {
+    flex-shrink: 0;
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: rgba(52,211,153,0.15);
+    color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+  }
+  .callout p { margin: 0; color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; }
+
+  /* --- diagram slide --- */
+  .diagram-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 18px;
+  }
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .legend .swatch { display: inline-flex; align-items: center; gap: 8px; }
+  .legend svg { width: 34px; height: 10px; flex-shrink: 0; }
+
+  /* nav */
+  .nav-dots {
+    position: fixed;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 10;
+  }
+  .nav-dots button {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+  .nav-dots button.active { background: var(--accent); border-color: var(--accent); }
+
+  .page-tag {
+    position: absolute;
+    bottom: 26px;
+    left: 8vw;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 860px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .nav-dots { display: none; }
+  }
+
+  @media print {
+    .deck { height: auto; overflow: visible; }
+    .slide { min-height: 100vh; page-break-after: always; }
+    .nav-dots { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="nav-dots" id="navDots" aria-hidden="true">
+  <button data-target="slide-1" class="active" aria-label="Slide 1"></button>
+  <button data-target="slide-2" aria-label="Slide 2"></button>
+  <button data-target="slide-3" aria-label="Slide 3"></button>
+</div>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1 — BUSINESS PROBLEM -->
+  <section class="slide" id="slide-1">
+    <div class="eyebrow">Koya Talent · AI Content Research &amp; Publishing Agent</div>
+    <h1>Content quality isn't the problem.<br>Scale is.</h1>
+    <p class="lede">The content team already has a pipeline that works: brainstorm an idea, research it, write it, adapt it for every channel, review it, publish it. It just can't run any faster without more people.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>The existing pipeline, today</h3>
+        <p>Idea → research → SEO article → LinkedIn / X / newsletter adaptation → internal review → publish — done by hand, start to finish, for every single piece.</p>
+        <div class="pill-row">
+          <span class="pill"><span class="dot red"></span> Fully manual</span>
+          <span class="pill"><span class="dot amber"></span> Doesn't scale with headcount held flat</span>
+          <span class="pill"><span class="dot red"></span> Tone &amp; accuracy slip under volume pressure</span>
+        </div>
+        <div class="locked-box">
+          <p style="color:var(--text); margin:0;"><strong>The real constraint:</strong> growing output today means hiring more people — or accepting worse quality, tone drift, and factual risk as the team pushes harder.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>What can't be compromised</h3>
+        <ul style="margin:0; padding-left:18px;">
+          <li>Every piece of content must stay <b style="color:var(--text)">traceable to real sources</b> — not just "we looked at a few links."</li>
+          <li><b style="color:var(--text)">Nothing publishes without a human decision</b> — approval is a gate, not a formality.</li>
+        </ul>
+        <div class="callout" style="margin-top:22px;">
+          <div class="badge">✓</div>
+          <p>Goal: an agent that takes over the repetitive <em>middle</em> of the pipeline — research, drafting, self-checking, channel adaptation — while a human still makes the final call before anything goes out.</p>
+        </div>
+      </div>
+    </div>
+    <div class="page-tag">1 / 3 — Business Problem</div>
+  </section>
+
+  <!-- SLIDE 2 — SOLUTION / HOW IT WORKS -->
+  <section class="slide" id="slide-2">
+    <div class="eyebrow">The Solution</div>
+    <h1>An agent for the repetitive middle.<br>A human for the final call.</h1>
+    <p class="lede">One staged pipeline, triggered by a simple request, that researches and drafts largely on its own, checks its own work, and only then hands off for a human decision.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>How a request moves through the system</h3>
+        <ol class="steps">
+          <li><b>Submit a request</b><br>An idea or a source URL, plus audience, tone, and which channels it's for.</li>
+          <li><b>Research &amp; curate sources</b><br>Scrapes or searches for reference material, ranks it, and keeps every claim traceable to the exact excerpt that supports it.</li>
+          <li><b>Draft, then self-check</b><br>Drafts the piece, scores it against a fixed rubric, and automatically revises any section that falls short — capped, so it can't loop forever.</li>
+          <li><b>Adapt for every channel</b><br>LinkedIn, X, and newsletter versions are generated together from the same approved draft.</li>
+          <li><b>Human review</b><br>A reviewer approves, rejects, or requests changes — a change request triggers its own tracked, automatic revision round.</li>
+          <li><b>Publishing queue</b><br>Approved content lands in a queue, tagged by channel, ready to go out immediately or on a schedule.</li>
+        </ol>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>What stays automatic</h3>
+          <div class="pill-row">
+            <span class="pill"><span class="dot green"></span> Research &amp; source ranking</span>
+            <span class="pill"><span class="dot green"></span> Drafting</span>
+            <span class="pill"><span class="dot green"></span> Self-evaluation &amp; revision</span>
+            <span class="pill"><span class="dot green"></span> Channel adaptation</span>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px;">
+          <h3>What stays human</h3>
+          <div class="pill-row">
+            <span class="pill"><span class="dot amber"></span> Approve / reject / request changes</span>
+            <span class="pill"><span class="dot amber"></span> What gets published, and when</span>
+          </div>
+        </div>
+        <div class="callout">
+          <div class="badge">🔎</div>
+          <p>Every stage writes to an activity log — inputs, sources used, evaluation scores — so any piece of content, and any failure, is traceable end to end.</p>
+        </div>
+      </div>
+    </div>
+    <div class="page-tag">2 / 3 — Solution Overview</div>
+  </section>
+
+  <!-- SLIDE 3 — ARCHITECTURE -->
+  <section class="slide" id="slide-3">
+    <div class="eyebrow">System Architecture</div>
+    <h1>One application, one pipeline, a human checkpoint before publish.</h1>
+    <p class="lede">A single Next.js application handles intake, the full research-through-drafting pipeline, and the human review screen — backed by Supabase and a small set of AI/search providers.</p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1300 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture diagram">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#8b93a8"/>
+          </marker>
+          <marker id="arrowAccent" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#6366f1"/>
+          </marker>
+          <marker id="arrowDash" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#5b6785"/>
+          </marker>
+        </defs>
+
+        <style>
+          .box { fill: #1c2a4a; stroke: #3a4a72; stroke-width: 1.5; }
+          .box-hr { fill: #2a2313; stroke: #f59e0b; stroke-width: 1.5; }
+          .box-out { fill: #142a24; stroke: #22c37a; stroke-width: 1.5; }
+          .box-sat { fill: #16213c; stroke: #2b3b5f; stroke-width: 1.2; stroke-dasharray: 3 3; }
+          .lbl { fill: #eef2f9; font-size: 15px; font-weight: 700; font-family: inherit; }
+          .lbl-sm { fill: #a9b6d0; font-size: 11.5px; font-family: inherit; }
+          .lbl-container { fill: #a9b6d0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; font-family: inherit; }
+          .flow { stroke: #8b93a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+          .flow-accent { stroke: #6366f1; stroke-width: 2.5; fill: none; marker-end: url(#arrowAccent); }
+          .flow-dash { stroke: #5b6785; stroke-width: 1.5; fill: none; stroke-dasharray: 5 5; marker-end: url(#arrowDash); }
+          .caption { fill: #5b6785; font-size: 11px; font-family: inherit; }
+        </style>
+
+        <!-- Content request input -->
+        <rect x="545" y="16" width="210" height="50" rx="10" class="box" />
+        <text x="650" y="37" text-anchor="middle" class="lbl">Content Request</text>
+        <text x="650" y="54" text-anchor="middle" class="lbl-sm">idea/URL · audience · tone · channels</text>
+        <path d="M650,66 L650,104" class="flow" />
+
+        <!-- Pipeline container -->
+        <rect x="30" y="104" width="940" height="472" rx="16" fill="none" stroke="#2b3b5f" stroke-width="1.5" stroke-dasharray="2 4"/>
+        <text x="52" y="128" class="lbl-container">NEXT.JS APP — FRONT-END + PIPELINE (ONE PROCESS)</text>
+
+        <!-- Row A -->
+        <rect x="70" y="150" width="190" height="80" rx="10" class="box"/>
+        <text x="165" y="184" text-anchor="middle" class="lbl">Intake</text>
+        <text x="165" y="202" text-anchor="middle" class="lbl-sm">validate, never trust</text>
+        <text x="165" y="216" text-anchor="middle" class="lbl-sm">client input</text>
+
+        <rect x="290" y="150" width="190" height="80" rx="10" class="box"/>
+        <text x="385" y="184" text-anchor="middle" class="lbl">Research &amp; Retrieval</text>
+        <text x="385" y="202" text-anchor="middle" class="lbl-sm">scrape a URL, or search</text>
+        <text x="385" y="216" text-anchor="middle" class="lbl-sm">for candidate sources</text>
+
+        <rect x="510" y="150" width="190" height="80" rx="10" class="box"/>
+        <text x="605" y="184" text-anchor="middle" class="lbl">Source Curation</text>
+        <text x="605" y="202" text-anchor="middle" class="lbl-sm">rank, select, embed —</text>
+        <text x="605" y="216" text-anchor="middle" class="lbl-sm">reject the rest (kept, why)</text>
+
+        <rect x="730" y="150" width="190" height="80" rx="10" class="box"/>
+        <text x="825" y="184" text-anchor="middle" class="lbl">Planning</text>
+        <text x="825" y="202" text-anchor="middle" class="lbl-sm">propose 2+ angles,</text>
+        <text x="825" y="216" text-anchor="middle" class="lbl-sm">pick one</text>
+
+        <path d="M260,190 L290,190" class="flow"/>
+        <path d="M480,190 L510,190" class="flow"/>
+        <path d="M700,190 L730,190" class="flow"/>
+
+        <!-- elbow from Planning down to Draft Generation -->
+        <path d="M825,230 L825,270 L165,270 L165,300" class="flow-accent"/>
+
+        <!-- Row B -->
+        <rect x="70" y="300" width="190" height="80" rx="10" class="box"/>
+        <text x="165" y="334" text-anchor="middle" class="lbl">Draft Generation</text>
+        <text x="165" y="352" text-anchor="middle" class="lbl-sm">structured sections from</text>
+        <text x="165" y="366" text-anchor="middle" class="lbl-sm">plan + curated sources</text>
+
+        <rect x="290" y="300" width="190" height="80" rx="10" class="box"/>
+        <text x="385" y="334" text-anchor="middle" class="lbl">Self-Evaluation</text>
+        <text x="385" y="352" text-anchor="middle" class="lbl-sm">scored vs. a fixed rubric —</text>
+        <text x="385" y="366" text-anchor="middle" class="lbl-sm">never fails open</text>
+
+        <rect x="510" y="300" width="190" height="80" rx="10" class="box"/>
+        <text x="605" y="334" text-anchor="middle" class="lbl">Channel Prep</text>
+        <text x="605" y="352" text-anchor="middle" class="lbl-sm">LinkedIn, X, newsletter —</text>
+        <text x="605" y="366" text-anchor="middle" class="lbl-sm">all three, every time</text>
+
+        <rect x="730" y="300" width="190" height="80" rx="10" class="box-hr"/>
+        <text x="825" y="334" text-anchor="middle" class="lbl">Human Review</text>
+        <text x="825" y="352" text-anchor="middle" class="lbl-sm">approve · reject ·</text>
+        <text x="825" y="366" text-anchor="middle" class="lbl-sm">request changes</text>
+
+        <path d="M260,340 L290,340" class="flow"/>
+        <path d="M480,340 L510,340" class="flow"/>
+        <path d="M700,340 L730,340" class="flow"/>
+
+        <!-- revise loop -->
+        <path d="M385,380 C385,430 165,430 165,380" class="flow-dash"/>
+        <text x="275" y="452" text-anchor="middle" class="caption">revise failing sections (capped rounds), then re-evaluate</text>
+
+        <!-- request-changes loop back from Human Review -->
+        <path d="M825,380 C825,500 610,500 605,380" class="flow-dash"/>
+        <text x="825" y="500" text-anchor="middle" class="caption" transform="translate(0,14)">"request changes" → automatic, tracked revision</text>
+
+        <!-- Human review approve -> publishing queue -->
+        <path d="M825,380 L825,556" class="flow-accent"/>
+        <text x="855" y="470" class="lbl-sm" transform="rotate(90 855 470)"></text>
+
+        <!-- Publishing queue box, below container -->
+        <rect x="700" y="600" width="240" height="70" rx="10" class="box-out"/>
+        <text x="820" y="630" text-anchor="middle" class="lbl">Publishing Queue</text>
+        <text x="820" y="648" text-anchor="middle" class="lbl-sm">Supabase · ready_to_publish,</text>
+        <text x="820" y="661" text-anchor="middle" class="lbl-sm">per channel, per schedule</text>
+
+        <!-- Satellite services -->
+        <text x="1010" y="128" class="lbl-container">SUPPORTING SERVICES</text>
+
+        <rect x="1000" y="150" width="270" height="66" rx="10" class="box-sat"/>
+        <text x="1135" y="176" text-anchor="middle" class="lbl" font-size="13.5">Firecrawl + Tavily</text>
+        <text x="1135" y="196" text-anchor="middle" class="lbl-sm">scrape a given URL, or</text>
+        <text x="1135" y="209" text-anchor="middle" class="lbl-sm">search for candidates</text>
+
+        <rect x="1000" y="234" width="270" height="66" rx="10" class="box-sat"/>
+        <text x="1135" y="260" text-anchor="middle" class="lbl" font-size="13.5">Voyage AI</text>
+        <text x="1135" y="280" text-anchor="middle" class="lbl-sm">embeddings for pgvector</text>
+        <text x="1135" y="293" text-anchor="middle" class="lbl-sm">similarity search</text>
+
+        <rect x="1000" y="318" width="270" height="66" rx="10" class="box-sat"/>
+        <text x="1135" y="344" text-anchor="middle" class="lbl" font-size="13.5">Claude API</text>
+        <text x="1135" y="364" text-anchor="middle" class="lbl-sm">drafting, evaluation,</text>
+        <text x="1135" y="377" text-anchor="middle" class="lbl-sm">revision, channel prep</text>
+
+        <rect x="1000" y="402" width="270" height="66" rx="10" class="box-sat"/>
+        <text x="1135" y="428" text-anchor="middle" class="lbl" font-size="13.5">Supabase (Postgres + pgvector)</text>
+        <text x="1135" y="448" text-anchor="middle" class="lbl-sm">system of record for every</text>
+        <text x="1135" y="461" text-anchor="middle" class="lbl-sm">request, draft, score &amp; queue row</text>
+
+        <rect x="1000" y="486" width="270" height="66" rx="10" class="box-sat"/>
+        <text x="1135" y="512" text-anchor="middle" class="lbl" font-size="13.5">Discord</text>
+        <text x="1135" y="532" text-anchor="middle" class="lbl-sm">alerts on failures &amp;</text>
+        <text x="1135" y="545" text-anchor="middle" class="lbl-sm">drafts ready for review</text>
+
+        <!-- connectors from satellites to stages -->
+        <path d="M1000,183 L480,190" class="flow-dash"/>
+        <path d="M1000,267 L605,215" class="flow-dash"/>
+        <path d="M1000,351 L260,330" class="flow-dash"/>
+        <path d="M1000,435 L820,600" class="flow-dash"/>
+        <path d="M1000,519 L920,340" class="flow-dash"/>
+
+        <!-- legend markers rendered via HTML below, not here -->
+      </svg>
+
+      <div class="legend">
+        <span class="swatch"><svg><line x1="0" y1="5" x2="34" y2="5" stroke="#8b93a8" stroke-width="2"/></svg> pipeline flow</span>
+        <span class="swatch"><svg><line x1="0" y1="5" x2="34" y2="5" stroke="#6366f1" stroke-width="2.5"/></svg> stage hand-off</span>
+        <span class="swatch"><svg><line x1="0" y1="5" x2="34" y2="5" stroke="#5b6785" stroke-width="1.5" stroke-dasharray="4 3"/></svg> loop / external call</span>
+        <span class="swatch"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#2a2313;border:1.5px solid #f59e0b;"></span> human checkpoint</span>
+        <span class="swatch"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#142a24;border:1.5px solid #22c37a;"></span> pipeline output</span>
+      </div>
+    </div>
+    <div class="page-tag">3 / 3 — Architecture</div>
+  </section>
+
+</div>
+
+<script>
+  (function () {
+    var deck = document.getElementById('deck');
+    var dots = Array.prototype.slice.call(document.querySelectorAll('#navDots button'));
+    var slides = dots.map(function (d) { return document.getElementById(d.getAttribute('data-target')); });
+
+    dots.forEach(function (dot) {
+      dot.addEventListener('click', function () {
+        var target = document.getElementById(dot.getAttribute('data-target'));
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+
+    function setActiveByScroll() {
+      var scrollPos = deck.scrollTop + deck.clientHeight / 2;
+      var activeIndex = 0;
+      slides.forEach(function (s, i) {
+        if (s && s.offsetTop <= scrollPos) activeIndex = i;
+      });
+      dots.forEach(function (d, i) { d.classList.toggle('active', i === activeIndex); });
+    }
+    deck.addEventListener('scroll', setActiveByScroll);
+
+    document.addEventListener('keydown', function (e) {
+      var activeIndex = dots.findIndex(function (d) { return d.classList.contains('active'); });
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'PageDown') {
+        var next = slides[Math.min(activeIndex + 1, slides.length - 1)];
+        if (next) next.scrollIntoView({ behavior: 'smooth' });
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        var prev = slides[Math.max(activeIndex - 1, 0)];
+        if (prev) prev.scrollIntoView({ behavior: 'smooth' });
+        e.preventDefault();
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>
