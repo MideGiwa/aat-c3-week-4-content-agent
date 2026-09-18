@@ -603,13 +603,15 @@ export async function evaluateDraft(
       "\n\nEach section lists the sources it cites, each with that source's actual excerpt — check the claims " +
       "against those excerpts (that's what 'Source Grounding' and 'Factual Consistency' mean here), not just " +
       "whether a citation is present. `available_sources` are every selected source, in case a section is missing " +
-      "a citation it should have had. Score each criterion 0-10. List any unsupported or weak claims (quote them) " +
-      "and which section headings need revision. Respond with ONLY JSON shaped as: " +
+      "a citation it should have had. Score each criterion 0-10. Be concise everywhere text is free-form: keep " +
+      "each criterion's `notes` to one short phrase (under 15 words), and for unsupported or weak claims give a " +
+      "brief paraphrase, not a verbatim quote — you're flagging what to fix, not transcribing the draft. List " +
+      "which section headings need revision. Respond with ONLY JSON shaped as: " +
       '{"status": "pass" | "revise" | "reject", ' +
-      `"scores": [{"criterion": string, "score": number, "notes": string}, ...] (exactly ${totalCriteria} entries — ` +
-      `the ${DEFAULT_RUBRIC_CRITERIA.length} default criteria first, in the order given` +
+      `"scores": [{"criterion": string, "score": number, "notes": string (short phrase, under 15 words)}, ...] ` +
+      `(exactly ${totalCriteria} entries — the ${DEFAULT_RUBRIC_CRITERIA.length} default criteria first, in the order given` +
       (customCriteria.length > 0 ? `, then the ${customCriteria.length} custom criteria in the order given` : "") +
-      '), "unsupported_claims": string[], "sections_needing_revision": string[]}.',
+      '), "unsupported_claims": string[] (brief paraphrases, not verbatim quotes), "sections_needing_revision": string[]}.',
     user: JSON.stringify({
       idea_or_topic: request.idea_or_topic,
       title: draft.title,
@@ -623,7 +625,16 @@ export async function evaluateDraft(
       })),
       available_sources: selected.map((s) => ({ id: s.id, title: s.title, excerpt: sourceExcerpt(s) })),
     }),
-    maxTokens: 2048,
+    // Was 2048 — a real draft (6 sections, up to 13 scored criteria with
+    // per-criterion notes plus unsupported-claim quotes and a revision
+    // list) can need more output than that, and running out mid-response
+    // is what produced the live "Unterminated string"/"Unexpected end of
+    // JSON input" (stop_reason=max_tokens) failures on 2026-09-18. Raised
+    // to match draftGeneration's budget, alongside tightening the prompt
+    // above to ask for short phrases/paraphrases instead of verbatim
+    // quotes so a full evaluation needs fewer output tokens in the first
+    // place.
+    maxTokens: 4096,
     validate: (json): {
       status: Evaluation["status"];
       scores: RubricScore[];
