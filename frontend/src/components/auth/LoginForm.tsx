@@ -6,8 +6,17 @@ import { TextInput } from "../ui/TextInput";
 
 type Mode = "magic_link" | "password";
 
+// Hidden 2026-09-18 (user-requested: "Hide the magic link on the login
+// page") — password is now the only sign-in method shown. Magic link's
+// handler, form, and "check your email" state are left in place rather
+// than deleted, since Supabase's 2-email/hour cap was the whole reason
+// password sign-in got added alongside it in the first place, not a reason
+// to remove magic link outright; flip this back to true (and the mode tab
+// bar reappears) if it's ever needed again.
+const MAGIC_LINK_ENABLED = false;
+
 export default function LoginForm({ redirectTo }: { redirectTo: string }) {
-  const [mode, setMode] = useState<Mode>("magic_link");
+  const [mode, setMode] = useState<Mode>(MAGIC_LINK_ENABLED ? "magic_link" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -94,30 +103,32 @@ export default function LoginForm({ redirectTo }: { redirectTo: string }) {
 
   return (
     <div className="max-w-sm">
-      <div className="flex gap-1 mb-4 border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => switchMode("magic_link")}
-          className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-            mode === "magic_link"
-              ? "border-accent-600 text-accent-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Email link
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("password")}
-          className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-            mode === "password"
-              ? "border-accent-600 text-accent-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Password
-        </button>
-      </div>
+      {MAGIC_LINK_ENABLED && (
+        <div className="flex gap-1 mb-4 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => switchMode("magic_link")}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
+              mode === "magic_link"
+                ? "border-accent-600 text-accent-700"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Email link
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("password")}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
+              mode === "password"
+                ? "border-accent-600 text-accent-700"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Password
+          </button>
+        </div>
+      )}
 
       {mode === "magic_link" ? (
         <form onSubmit={handleMagicLinkSubmit} className="flex flex-col gap-3">
