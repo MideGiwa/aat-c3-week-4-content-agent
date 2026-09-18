@@ -27,7 +27,16 @@ export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5
 // user-requested: "use a smaller model for that check"). Defaults to a
 // stable Haiku model id; swap for whichever current small model your
 // account has access to.
-export const ANTHROPIC_FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL ?? "claude-3-5-haiku-20241022";
+//
+// 2026-09-18: the original default here, "claude-3-5-haiku-20241022", was
+// retired by Anthropic on 2026-02-19 (deprecation announced 2025-12-19) and
+// now 404s on every call with `not_found_error` — hit live on Vercel via
+// checkIdeaPremise. Anthropic's own deprecations table names
+// "claude-haiku-4-5-20251001" as the direct migration target, so that's the
+// new default. Pin a dated snapshot here (not the "claude-haiku-4-5" alias)
+// so a future Anthropic-side model swap under that alias can't silently
+// change this call's behavior without a deliberate version bump.
+export const ANTHROPIC_FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL ?? "claude-haiku-4-5-20251001";
 export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY ?? "";
 export const TAVILY_API_KEY = process.env.TAVILY_API_KEY ?? "";
 export const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY ?? "";
