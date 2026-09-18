@@ -1,0 +1,519 @@
+{
+  "name": "Publish Queue Runner (LinkedIn + X)",
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 5 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "flag-stale-1",
+      "name": "Flag Stale Scheduled Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [200, 0],
+      "notes": "Guardrail: if this workflow was inactive/down for a while, don't let it 'catch up' by blasting out everything that missed its schedule. Anything more than 24h past its scheduled_for gets pulled out of the ready pool for a human to look at instead of auto-publishing something stale. RETURNING gives us exactly the rows newly flagged this tick (a row can only match this WHERE clause once, since the status flip is one-directional) so the Discord notify branch can report on them without re-alerting every tick.",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE publishing_queue pq\nSET status = 'stale_needs_review'\nFROM channel_assets ca\nWHERE pq.channel_asset_id = ca.id\n  AND pq.status = 'ready_to_publish'\n  AND pq.scheduled_for IS NOT NULL\n  AND pq.scheduled_for < NOW() - INTERVAL '24 hours'\nRETURNING pq.id AS queue_id, pq.request_id;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "tick-passthrough-1",
+      "name": "Tick Passthrough",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, -80],
+      "notes": "Guardrail: guarantees exactly ONE item flows into Claim Due Posts every tick, no matter how many rows (zero, one, or several) Flag Stale Scheduled Posts just returned. Without this, a tick that flags 2 stale rows would run the claim query twice, and a tick that flags 0 rows could skip it entirely depending on node behavior — neither is correct.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { tick: true, ts: new Date().toISOString() } }];"
+      }
+    },
+    {
+      "id": "summarize-stale-1",
+      "name": "Summarize Stale Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 80],
+      "notes": "Runs once per tick regardless of item count. Emits nothing (so Discord never fires) when zero rows were flagged; emits one summary item when one or more were, so a burst of stale rows produces one Discord message, not a spam of them.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nif (items.length === 0) {\n  return [];\n}\nreturn [{\n  json: {\n    count: items.length,\n    request_ids: items.map(i => i.json.request_id)\n  }\n}];"
+      }
+    },
+    {
+      "id": "notify-stale-1",
+      "name": "Notify Discord (Stale Flagged)",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [640, 80],
+      "parameters": {
+        "connectionType": "webhook",
+        "content": "={{ '⏰ ' + $json.count + ' scheduled post(s) were more than 24h overdue and moved to `stale_needs_review` instead of being auto-published. Request IDs: ' + $json.request_ids.join(', ') }}"
+      },
+      "credentials": {
+        "discordWebhookApi": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Content Ops Discord Webhook" }
+      }
+    },
+    {
+      "id": "get-due-1",
+      "name": "Claim Due Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [640, -80],
+      "notes": "Guardrail: this is an atomic claim (UPDATE ... FOR UPDATE SKIP LOCKED ... RETURNING), not a plain SELECT. If the previous run overlaps this one (e.g. it took longer than 5 minutes), the two executions can never claim the same row, so a post can never be published twice.",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH due AS (\n  SELECT pq.id\n  FROM publishing_queue pq\n  JOIN channel_assets ca ON ca.id = pq.channel_asset_id\n  WHERE pq.status = 'ready_to_publish'\n    AND ca.channel IN ('linkedin', 'x')\n    AND (\n      pq.scheduled_for IS NULL\n      OR pq.scheduled_for <= NOW()\n    )\n  ORDER BY pq.scheduled_for ASC NULLS FIRST\n  LIMIT 20\n  FOR UPDATE OF pq SKIP LOCKED\n)\nUPDATE publishing_queue pq\nSET status = 'processing'\nFROM due, channel_assets ca\nWHERE pq.id = due.id AND ca.id = pq.channel_asset_id\nRETURNING pq.id AS queue_id, ca.channel, ca.content, ca.request_id, pq.scheduled_for;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "loop-1",
+      "name": "Loop Over Posts",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [860, -80],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "validate-1",
+      "name": "Validate Before Publish",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, -160],
+      "notes": "Guardrail: required-data gate. Nothing reaches a platform API without non-empty content, a known channel, and channel-specific limits satisfied (e.g. X's 280 character cap). Anything that fails is marked invalid with a specific reason instead of being sent to the API and getting an opaque rejection.",
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst content = (item.content || '').trim();\nconst channel = item.channel;\nlet reason = null;\n\nif (!channel) {\n  reason = 'missing channel';\n} else if (!content) {\n  reason = 'empty content';\n} else if (channel === 'x' && content.length > 280) {\n  reason = `content exceeds X's 280 character limit (${content.length} chars)`;\n} else if (!item.queue_id) {\n  reason = 'missing queue_id';\n}\n\nreturn {\n  json: {\n    ...item,\n    _valid: reason === null,\n    _invalid_reason: reason\n  }\n};"
+      }
+    },
+    {
+      "id": "isvalid-1",
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1300, -160],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json._valid }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mark-invalid-1",
+      "name": "Mark Invalid",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1300, 20],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE publishing_queue SET status = 'failed', error_message = $1 WHERE id = $2;\nINSERT INTO stage_logs (request_id, stage, status, error_message) VALUES ($3, 'publish_validation', 'failed', $1);",
+        "options": {
+          "queryReplacement": "={{ [ 'validation: ' + $json._invalid_reason, $json.queue_id, $json.request_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "notify-invalid-1",
+      "name": "Notify Discord (Validation Failed)",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [1520, 20],
+      "parameters": {
+        "connectionType": "webhook",
+        "content": "={{ '⚠️ Content failed validation before publish (queue id ' + $('Validate Before Publish').item.json.queue_id + ', channel ' + $('Validate Before Publish').item.json.channel + '): ' + $('Validate Before Publish').item.json._invalid_reason }}"
+      },
+      "credentials": {
+        "discordWebhookApi": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Content Ops Discord Webhook" }
+      }
+    },
+    {
+      "id": "switch-1",
+      "name": "Route By Channel",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1520, -160],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "outputKey": "linkedin",
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.channel }}",
+                    "rightValue": "linkedin",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "x",
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.channel }}",
+                    "rightValue": "x",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      }
+    },
+    {
+      "id": "linkedin-1",
+      "name": "Publish To LinkedIn",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [1740, -320],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "post",
+        "operation": "create",
+        "text": "={{ $json.content }}",
+        "shareMediaCategory": "NONE",
+        "postAs": "person"
+      },
+      "credentials": {
+        "linkedInOAuth2Api": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "LinkedIn account" }
+      }
+    },
+    {
+      "id": "update-linkedin-1",
+      "name": "Update Queue (LinkedIn)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1960, -320],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE publishing_queue\nSET status = $1,\n    published_at = $2,\n    error_message = $3\nWHERE id = $4;",
+        "options": {
+          "queryReplacement": "={{ [ $json.error ? 'failed' : 'published', $json.error ? null : new Date().toISOString(), $json.error ? $json.error.message : null, $('Route By Channel').item.json.queue_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "log-linkedin-1",
+      "name": "Log Attempt (LinkedIn)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2180, -320],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO stage_logs (request_id, stage, status, error_message)\nVALUES ($1, $2, $3, $4);",
+        "options": {
+          "queryReplacement": "={{ [ $('Route By Channel').item.json.request_id, 'publish_linkedin', $json.error ? 'failed' : 'success', $json.error ? $json.error.message : null ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "if-linkedin-failed-1",
+      "name": "LinkedIn Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2400, -320],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notify-linkedin-failed-1",
+      "name": "Notify Discord (LinkedIn Failed)",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [2620, -400],
+      "parameters": {
+        "connectionType": "webhook",
+        "content": "={{ '🔴 LinkedIn publish failed (request ' + $('Route By Channel').item.json.request_id + '): ' + $json.error.message }}"
+      },
+      "credentials": {
+        "discordWebhookApi": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Content Ops Discord Webhook" }
+      }
+    },
+    {
+      "id": "x-1",
+      "name": "Publish To X",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [1740, 100],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "tweet",
+        "operation": "create",
+        "text": "={{ $json.content }}"
+      },
+      "credentials": {
+        "twitterOAuth2Api": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "X account" }
+      }
+    },
+    {
+      "id": "update-x-1",
+      "name": "Update Queue (X)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1960, 100],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE publishing_queue\nSET status = $1,\n    published_at = $2,\n    error_message = $3\nWHERE id = $4;",
+        "options": {
+          "queryReplacement": "={{ [ $json.error ? 'failed' : 'published', $json.error ? null : new Date().toISOString(), $json.error ? $json.error.message : null, $('Route By Channel').item.json.queue_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "log-x-1",
+      "name": "Log Attempt (X)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2180, 100],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO stage_logs (request_id, stage, status, error_message)\nVALUES ($1, $2, $3, $4);",
+        "options": {
+          "queryReplacement": "={{ [ $('Route By Channel').item.json.request_id, 'publish_x', $json.error ? 'failed' : 'success', $json.error ? $json.error.message : null ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "if-x-failed-1",
+      "name": "X Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2400, 100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notify-x-failed-1",
+      "name": "Notify Discord (X Failed)",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [2620, 180],
+      "parameters": {
+        "connectionType": "webhook",
+        "content": "={{ '🔴 X publish failed (request ' + $('Route By Channel').item.json.request_id + '): ' + $json.error.message }}"
+      },
+      "credentials": {
+        "discordWebhookApi": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Content Ops Discord Webhook" }
+      }
+    },
+    {
+      "id": "noop-fallback-1",
+      "name": "Unknown Channel (Skip)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1740, 380],
+      "parameters": {}
+    },
+    {
+      "id": "noop-done-1",
+      "name": "Run Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1080, 380],
+      "parameters": {}
+    },
+    {
+      "id": "check-failure-rate-1",
+      "name": "Check Failure Rate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1300, 380],
+      "notes": "Closes the 'credential expiry alerting' gap flagged in the earlier hardening review: if a channel has racked up 3+ failures in the last hour, that's very likely an expired credential or a persistent API/rate-limit problem, not one-off bad luck — worth a human looking rather than quietly failing every 5 minutes.",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT stage, COUNT(*) AS failures\nFROM stage_logs\nWHERE status = 'failed'\n  AND stage IN ('publish_linkedin', 'publish_x')\n  AND created_at > NOW() - INTERVAL '1 hour'\nGROUP BY stage\nHAVING COUNT(*) >= 3;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "id": "notify-repeated-failures-1",
+      "name": "Notify Discord (Repeated Failures)",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [1520, 380],
+      "parameters": {
+        "connectionType": "webhook",
+        "content": "={{ '🚨 ' + $json.stage + ' has failed ' + $json.failures + ' time(s) in the last hour — likely a credential, auth, or rate-limit issue. Check stage_logs and the credential in n8n.' }}"
+      },
+      "credentials": {
+        "discordWebhookApi": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Content Ops Discord Webhook" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [[{ "node": "Flag Stale Scheduled Posts", "type": "main", "index": 0 }]]
+    },
+    "Flag Stale Scheduled Posts": {
+      "main": [
+        [
+          { "node": "Tick Passthrough", "type": "main", "index": 0 },
+          { "node": "Summarize Stale Flags", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Tick Passthrough": {
+      "main": [[{ "node": "Claim Due Posts", "type": "main", "index": 0 }]]
+    },
+    "Summarize Stale Flags": {
+      "main": [[{ "node": "Notify Discord (Stale Flagged)", "type": "main", "index": 0 }]]
+    },
+    "Claim Due Posts": {
+      "main": [[{ "node": "Loop Over Posts", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Posts": {
+      "main": [
+        [{ "node": "Validate Before Publish", "type": "main", "index": 0 }],
+        [{ "node": "Run Complete", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Before Publish": {
+      "main": [[{ "node": "Is Valid?", "type": "main", "index": 0 }]]
+    },
+    "Is Valid?": {
+      "main": [
+        [{ "node": "Route By Channel", "type": "main", "index": 0 }],
+        [{ "node": "Mark Invalid", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark Invalid": {
+      "main": [[{ "node": "Notify Discord (Validation Failed)", "type": "main", "index": 0 }]]
+    },
+    "Notify Discord (Validation Failed)": {
+      "main": [[{ "node": "Loop Over Posts", "type": "main", "index": 0 }]]
+    },
+    "Route By Channel": {
+      "main": [
+        [{ "node": "Publish To LinkedIn", "type": "main", "index": 0 }],
+        [{ "node": "Publish To X", "type": "main", "index": 0 }],
+        [{ "node": "Unknown Channel (Skip)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Publish To LinkedIn": {
+      "main": [[{ "node": "Update Queue (LinkedIn)", "type": "main", "index": 0 }]]
+    },
+    "Update Queue (LinkedIn)": {
+      "main": [[{ "node": "Log Attempt (LinkedIn)", "type": "main", "index": 0 }]]
+    },
+    "Log Attempt (LinkedIn)": {
+      "main": [[{ "node": "LinkedIn Failed?", "type": "main", "index": 0 }]]
+    },
+    "LinkedIn Failed?": {
+      "main": [
+        [{ "node": "Notify Discord (LinkedIn Failed)", "type": "main", "index": 0 }],
+        [{ "node": "Loop Over Posts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Discord (LinkedIn Failed)": {
+      "main": [[{ "node": "Loop Over Posts", "type": "main", "index": 0 }]]
+    },
+    "Publish To X": {
+      "main": [[{ "node": "Update Queue (X)", "type": "main", "index": 0 }]]
+    },
+    "Update Queue (X)": {
+      "main": [[{ "node": "Log Attempt (X)", "type": "main", "index": 0 }]]
+    },
+    "Log Attempt (X)": {
+      "main": [[{ "node": "X Failed?", "type": "main", "index": 0 }]]
+    },
+    "X Failed?": {
+      "main": [
+        [{ "node": "Notify Discord (X Failed)", "type": "main", "index": 0 }],
+        [{ "node": "Loop Over Posts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Discord (X Failed)": {
+      "main": [[{ "node": "Loop Over Posts", "type": "main", "index": 0 }]]
+    },
+    "Unknown Channel (Skip)": {
+      "main": [[{ "node": "Loop Over Posts", "type": "main", "index": 0 }]]
+    },
+    "Run Complete": {
+      "main": [[{ "node": "Check Failure Rate", "type": "main", "index": 0 }]]
+    },
+    "Check Failure Rate": {
+      "main": [[{ "node": "Notify Discord (Repeated Failures)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
