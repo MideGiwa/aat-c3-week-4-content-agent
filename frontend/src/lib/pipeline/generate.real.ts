@@ -68,6 +68,39 @@ export interface ScrapeFailure {
   detail: string;
 }
 
+// Turns a machine-facing failure (a raw HTTP status + response body, or a
+// caught exception's message) into the one-sentence, reviewer-facing
+// explanation that ends up in a failed candidate's own relevance_note (see
+// researchAndCurateSources' failedSources below). Deliberately doesn't
+// assert "paywall" outright for a 401/403 — Firecrawl can't tell us that's
+// actually why, it's just the single most common real-world reason a page
+// refuses an automated fetch, alongside a login wall or bot-blocking — so
+// this names it as one honest possibility, not a diagnosis.
+function describeScrapeFailure(reason: ScrapeFailureReason, detail: string): string {
+  if (reason === "unsupported_site") {
+    return "This site doesn't allow automated scraping, so it couldn't be retrieved.";
+  }
+  if (reason === "network_error") {
+    return "Couldn't reach this page — a network or connection error.";
+  }
+  // reason === "http_error": prefer surfacing just the status code over the
+  // raw response body, which can be a full HTML or JSON error page.
+  const status = detail.match(/^(\d{3})\b/)?.[1] ?? null;
+  if (status === "401" || status === "403") {
+    return `This page refused access (HTTP ${status}) — often a paywall, login wall, or bot-blocking.`;
+  }
+  if (status === "404") {
+    return "This page couldn't be found (HTTP 404) — it may have moved or been removed.";
+  }
+  if (status) {
+    return `This page returned an error when we tried to retrieve it (HTTP ${status}).`;
+  }
+  if (detail.toLowerCase().includes("no markdown content")) {
+    return "This page didn't return any readable content — it may require a login, JavaScript, or be paywalled.";
+  }
+  return "This page couldn't be retrieved.";
+}
+
 const DEFAULT_RUBRIC_CRITERIA = [
   "Topic Relevance",
   "Source Grounding",
@@ -145,11 +178,24 @@ const CHANNEL_FORMATTING_RULES: Record<Channel, string> = {
  * refusal, a generic HTTP error, or a network-level failure). The
  * orchestrator persists these to `stage_logs` purely for measurement — see
  * DESIGN.md's 2026-09-18 decisions log entry — this function itself makes
- * no decisions based on them. */
+ * no decisions based on them.
+ *
+ * And `failedSources` (2026-09-18, second fix same day) — the SAME
+ * failures, but shaped as ordinary `SourceRef` rows (`selected: false`, no
+ * `raw_text`, a plain-language `relevance_note` naming why) so the
+ * orchestrator can insert them into `sources` too. Before this, a source
+ * Firecrawl couldn't retrieve (paywalled, blocked, a dead link) just
+ * vanished — nothing about it ever reached the reviewer, who had no way to
+ * tell "the agent chose not to use this" (a real curation decision, shown
+ * today) apart from "the agent never even got the chance to look at this."
+ * Both now show up the same way, under Sources' existing "considered but
+ * not used" list — this doesn't change what gets used for the actual
+ * draft: only genuinely scraped-then-curated sources ever get selected. */
 export async function researchAndCurateSources(request: ContentRequest): Promise<{
   sources: SourceRef[];
   chunks: Array<{ id: string; source_id: string; chunk_index: number; chunk_text: string; embedding: number[] }>;
   scrapeFailures: ScrapeFailure[];
+  failedSources: SourceRef[];
 }> {
   const now = new Date().toISOString();
   const candidateUrls: string[] = [];
@@ -202,8 +248,22 @@ export async function researchAndCurateSources(request: ContentRequest): Promise
     }
   });
 
+  // Built once, right after scrapeFailures is fully assembled — used
+  // whether or not any candidate actually made it through to a real draft
+  // (see the doc comment above).
+  const failedSources: SourceRef[] = scrapeFailures.map((f) => ({
+    id: randomUUID(),
+    request_id: request.id,
+    url: f.url,
+    title: f.url,
+    retrieved_at: now,
+    selected: false,
+    relevance_note: describeScrapeFailure(f.reason, f.detail),
+    raw_text: null,
+  }));
+
   if (scraped.length === 0) {
-    return { sources: [], chunks: [], scrapeFailures };
+    return { sources: [], chunks: [], scrapeFailures, failedSources };
   }
 
   const curated = await structuredCall({
@@ -268,7 +328,7 @@ export async function researchAndCurateSources(request: ContentRequest): Promise
     });
   }
 
-  return { sources, chunks, scrapeFailures };
+  return { sources, chunks, scrapeFailures, failedSources };
 }
 
 /** Planning (CONTENT-PIPELINE-SPEC.md §3) — a Claude call proposing two

@@ -12,22 +12,34 @@ export default function LoginForm({ redirectTo }: { redirectTo: string }) {
     setStatus("sending");
     setError(null);
 
-    const res = await fetch("/api/auth/request-magic-link", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
-      }),
-    });
-    const result = await res.json();
+    // Belt-and-suspenders alongside the middleware fix (2026-09-18): a
+    // network failure, or a response that isn't valid JSON (an HTML error
+    // page, say — which is exactly what the middleware bug used to hand
+    // back here), used to throw from fetch()/res.json() with nothing
+    // catching it, leaving status stuck on "sending" forever with no way
+    // out but a page reload. Now any failure at all lands on a visible
+    // error instead.
+    try {
+      const res = await fetch("/api/auth/request-magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
+        }),
+      });
+      const result = await res.json();
 
-    if (!result.ok) {
+      if (!result.ok) {
+        setStatus("error");
+        setError(result.message ?? "Something went wrong. Try again.");
+        return;
+      }
+      setStatus("sent");
+    } catch {
       setStatus("error");
-      setError(result.message);
-      return;
+      setError("Couldn't reach the server. Check your connection and try again.");
     }
-    setStatus("sent");
   }
 
   if (status === "sent") {
