@@ -10,6 +10,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Channel, Profile } from "@/lib/types";
 import { validateNewRequest, type FieldError, type NewRequestInput } from "@/lib/validation";
+import Button from "../ui/Button";
+import Checkbox from "../ui/Checkbox";
+import Select from "../ui/Select";
+import { TextInput, Textarea } from "../ui/TextInput";
 
 const CHANNELS: { value: Channel; label: string }[] = [
   { value: "linkedin", label: "LinkedIn" },
@@ -157,11 +161,10 @@ export default function NewRequestForm({
         <label className="block text-sm font-medium text-slate-700 mb-1">
           Idea / topic <span className="text-red-500">*</span>
         </label>
-        <textarea
+        <Textarea
           value={ideaOrTopic}
           onChange={(e) => setIdeaOrTopic(e.target.value)}
           rows={3}
-          className="w-full rounded-md border border-slate-300 text-sm p-2"
           placeholder="Describe the content idea in a sentence or two — not just a link or a keyword."
         />
         {errorFor("idea_or_topic") && (
@@ -173,10 +176,9 @@ export default function NewRequestForm({
         <label className="block text-sm font-medium text-slate-700 mb-1">
           Target audience <span className="text-red-500">*</span>
         </label>
-        <input
+        <TextInput
           value={targetAudience}
           onChange={(e) => setTargetAudience(e.target.value)}
-          className="w-full rounded-md border border-slate-300 text-sm p-2"
           placeholder="e.g. Early-career product managers"
         />
         {errorFor("target_audience") && (
@@ -188,10 +190,9 @@ export default function NewRequestForm({
         <label className="block text-sm font-medium text-slate-700 mb-1">
           Reference URL <span className="text-slate-400 font-normal">(optional)</span>
         </label>
-        <input
+        <TextInput
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
-          className="w-full rounded-md border border-slate-300 text-sm p-2"
           placeholder="https://..."
         />
         {errorFor("source_url") && (
@@ -220,22 +221,18 @@ export default function NewRequestForm({
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Tone</label>
-        <select
-          value={toneOption}
-          onChange={(e) => setToneOption(e.target.value)}
-          className="w-full rounded-md border border-slate-300 text-sm p-2"
-        >
+        <Select value={toneOption} onChange={(e) => setToneOption(e.target.value)}>
           <option value="professional">Professional</option>
           <option value="conversational">Conversational</option>
           <option value="authoritative">Authoritative</option>
           <option value="playful">Playful</option>
           <option value={CUSTOM_TONE_OPTION}>Other (type your own)…</option>
-        </select>
+        </Select>
         {toneOption === CUSTOM_TONE_OPTION && (
-          <input
+          <TextInput
             value={customTone}
             onChange={(e) => setCustomTone(e.target.value)}
-            className="mt-2 w-full rounded-md border border-slate-300 text-sm p-2"
+            className="mt-2"
             placeholder="e.g. Wry and a little skeptical"
             maxLength={40}
           />
@@ -249,14 +246,12 @@ export default function NewRequestForm({
         </label>
         <div className="flex gap-4">
           {CHANNELS.map((c) => (
-            <label key={c.value} className="flex items-center gap-1.5 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={channels.includes(c.value)}
-                onChange={() => toggleChannel(c.value)}
-              />
-              {c.label}
-            </label>
+            <Checkbox
+              key={c.value}
+              label={c.label}
+              checked={channels.includes(c.value)}
+              onChange={() => toggleChannel(c.value)}
+            />
           ))}
         </div>
         {errorFor("priority_channels") && (
@@ -270,13 +265,9 @@ export default function NewRequestForm({
             Custom rubric criteria <span className="text-slate-400 font-normal">(optional)</span>
           </label>
           {customCriteria.length < MAX_CUSTOM_CRITERIA && (
-            <button
-              type="button"
-              onClick={addCustomCriterion}
-              className="text-xs font-medium text-accent-700 hover:underline"
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={addCustomCriterion}>
               + Add criterion
-            </button>
+            </Button>
           )}
         </div>
         <p className="text-xs text-slate-400 mb-2">
@@ -290,27 +281,28 @@ export default function NewRequestForm({
             {customCriteria.map((criterion, i) => (
               <div key={i} className="rounded-md border border-slate-200 p-2.5 space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <input
+                  <TextInput
                     value={criterion.name}
                     onChange={(e) => updateCustomCriterion(i, "name", e.target.value)}
-                    className="flex-1 rounded-md border border-slate-300 text-sm p-1.5"
+                    className="flex-1"
                     placeholder="Criterion name, e.g. Hook Strength"
                     maxLength={60}
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="dangerOutline"
+                    size="sm"
                     onClick={() => removeCustomCriterion(i)}
-                    className="text-xs text-slate-400 hover:text-red-600"
+                    className="border-transparent bg-transparent"
                     aria-label="Remove criterion"
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
-                <textarea
+                <Textarea
                   value={criterion.description}
                   onChange={(e) => updateCustomCriterion(i, "description", e.target.value)}
                   rows={2}
-                  className="w-full rounded-md border border-slate-300 text-sm p-1.5"
                   placeholder="What should this check for? e.g. Does the opening line earn a read within the first two sentences?"
                   maxLength={300}
                 />
@@ -336,14 +328,12 @@ export default function NewRequestForm({
           </label>
           <div className="flex flex-wrap gap-3">
             {reviewerCandidates.map((p) => (
-              <label key={p.id} className="flex items-center gap-1.5 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={reviewerIds.includes(p.id)}
-                  onChange={() => toggleReviewer(p.id)}
-                />
-                {p.name}
-              </label>
+              <Checkbox
+                key={p.id}
+                label={p.name}
+                checked={reviewerIds.includes(p.id)}
+                onChange={() => toggleReviewer(p.id)}
+              />
             ))}
           </div>
           <p className="mt-1 text-xs text-slate-400">
@@ -353,13 +343,9 @@ export default function NewRequestForm({
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="text-sm font-medium bg-accent-600 text-white px-4 py-2 rounded-md hover:bg-accent-700 disabled:opacity-50"
-      >
+      <Button type="submit" loading={submitting}>
         {submitting ? "Submitting..." : "Submit request"}
-      </button>
+      </Button>
     </form>
   );
 }

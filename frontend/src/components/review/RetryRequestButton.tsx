@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "../ui/Button";
 
 // Used on both /requests/[id] (research_failed banner) and RequestCard (on
 // the board, wrapped in a <Link> to the request — stopPropagation +
@@ -53,18 +54,16 @@ export default function RetryRequestButton({
 
   return (
     <div className={compact ? "mt-2" : "shrink-0"}>
-      <button
+      <Button
         type="button"
-        disabled={submitting}
+        variant={compact ? "dangerOutline" : "danger"}
+        size="sm"
+        loading={submitting}
         onClick={retry}
-        className={
-          compact
-            ? "text-xs font-medium text-red-700 border border-red-300 px-2 py-1 rounded-md hover:bg-red-100 disabled:opacity-50"
-            : "text-sm font-medium bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
-        }
+        className={compact ? undefined : "whitespace-nowrap"}
       >
         {submitting ? "Retrying…" : "Retry"}
-      </button>
+      </Button>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );

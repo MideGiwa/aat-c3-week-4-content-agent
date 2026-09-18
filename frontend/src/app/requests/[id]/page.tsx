@@ -220,7 +220,12 @@ export default async function RequestDetailPage({
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <SourceList sources={sources} />
+            {/* citingSections reflects the ACTIVE draft only, not whichever
+                version a reviewer happens to be viewing in DraftReviewPanel's
+                version history (that's client-side state this server
+                component can't see) — the active draft is the one that
+                actually matters for what will get published. */}
+            <SourceList sources={sources} citingSections={activeDraft?.sections ?? []} />
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">

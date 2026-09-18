@@ -21,6 +21,13 @@ export const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY ?? "";
 // USE_MOCK_DATA is true — nothing reads these in mock mode.
 export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
+// A smaller/cheaper model for narrow, fast judgment calls that don't need
+// the main pipeline model's full reasoning — right now just the intake-time
+// premise check (generate.real.ts's checkIdeaPremise, 2026-09-18,
+// user-requested: "use a smaller model for that check"). Defaults to a
+// stable Haiku model id; swap for whichever current small model your
+// account has access to.
+export const ANTHROPIC_FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL ?? "claude-3-5-haiku-20241022";
 export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY ?? "";
 export const TAVILY_API_KEY = process.env.TAVILY_API_KEY ?? "";
 export const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY ?? "";

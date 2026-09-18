@@ -8,6 +8,7 @@
 import { getStore, nextId } from "./store";
 import { isFutureDateTime, validateNewRequest, type NewRequestInput } from "../validation";
 import type { Channel, ContentRequest } from "../types";
+import { checkIdeaPremise } from "../pipeline/generate";
 import {
   applyManualSectionEdit,
   promoteChannelAssetsToReadyToPublish,
@@ -32,6 +33,26 @@ export function handleContentRequestWebhook(
   const errors = validateNewRequest(input);
   if (errors.length > 0) {
     return { ok: false, errors };
+  }
+
+  // Premise check (2026-09-18) — see generate.ts's checkIdeaPremise doc
+  // comment. Runs after field validation but before anything is created:
+  // a flagged idea never becomes a request row at all, exactly like every
+  // other validateNewRequest failure above.
+  const premiseCheck = checkIdeaPremise(input.idea_or_topic);
+  if (premiseCheck.flagged) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "idea_or_topic",
+          message:
+            `This idea's premise${premiseCheck.category ? ` (${premiseCheck.category})` : ""} conflicts with ` +
+            `established facts. ${premiseCheck.explanation} If you're examining or debunking this claim rather ` +
+            `than asserting it, rephrase the topic to make that clear.`,
+        },
+      ],
+    };
   }
 
   const store = getStore();

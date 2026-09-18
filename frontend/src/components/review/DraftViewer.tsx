@@ -13,21 +13,35 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { Draft, SourceRef } from "@/lib/types";
+import type { Draft, DraftSection, SourceRef } from "@/lib/types";
+import MarkdownText from "./MarkdownText";
+import Button from "../ui/Button";
+import { Textarea } from "../ui/TextInput";
 
 export default function DraftViewer({
   draft,
   sources,
   editable = false,
   requestId,
+  previousSections,
 }: {
   draft: Draft;
   sources: SourceRef[];
   editable?: boolean;
   requestId?: string;
+  /** The prior version's sections in this same angle's revision chain
+   * (PRODUCTION-READINESS-UX-PLAN.md "Next" item 3) — undefined for v1 of
+   * an angle, where there's nothing to diff against. Matched to the current
+   * draft's sections by heading (the same matching key generate.real.ts's
+   * revision step itself uses), not by array position, since a revision can
+   * reorder or drop sections. Scoped deliberately to "did this section
+   * change at all" rather than a word-level diff — see the plan doc for why
+   * that's phase one. */
+  previousSections?: DraftSection[];
 }) {
   const router = useRouter();
   const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const previousByHeading = new Map((previousSections ?? []).map((s) => [s.heading, s]));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draftBody, setDraftBody] = useState("");
   const [saving, setSaving] = useState(false);
@@ -92,49 +106,72 @@ export default function DraftViewer({
 
       {draft.sections.map((section, idx) => {
         const isEditing = editingIndex === idx;
+        const previous = previousByHeading.get(section.heading);
+        const isNewSection = previousSections !== undefined && !previous;
+        const isChangedSection = previous !== undefined && previous.body !== section.body;
         return (
           <section key={idx} className="mb-6">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <h2 className="text-lg font-semibold text-slate-800">{section.heading}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-800">{section.heading}</h2>
+                {isNewSection && (
+                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-accent-100 text-accent-700">
+                    New
+                  </span>
+                )}
+                {isChangedSection && (
+                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                    Changed
+                  </span>
+                )}
+              </div>
               {editable && !isEditing && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
                   onClick={() => startEditing(idx, section.body)}
-                  className="shrink-0 text-xs font-medium text-accent-700 hover:underline"
                 >
                   Edit
-                </button>
+                </Button>
               )}
             </div>
 
             {isEditing ? (
               <div>
                 {error && <p className="text-xs text-red-600 mb-1.5">{error}</p>}
-                <textarea
+                <Textarea
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
                   rows={6}
-                  className="w-full rounded-md border border-slate-300 text-sm p-2 leading-relaxed"
+                  className="leading-relaxed"
                   autoFocus
                 />
                 <div className="mt-2 flex gap-2">
-                  <button
-                    disabled={saving}
-                    onClick={() => saveEdit(idx)}
-                    className="text-xs font-medium bg-accent-600 text-white px-2.5 py-1.5 rounded-md hover:bg-accent-700 disabled:opacity-50"
-                  >
-                    {saving ? "Saving…" : "Save"}
-                  </button>
-                  <button
-                    disabled={saving}
-                    onClick={cancelEditing}
-                    className="text-xs text-slate-500 px-2.5 py-1.5"
-                  >
+                  <Button size="sm" loading={saving} onClick={() => saveEdit(idx)}>
+                    {saving ? "Saving…" : "Save (creates a new version)"}
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEditing}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm leading-relaxed text-slate-700 whitespace-pre-line">{section.body}</p>
+              <MarkdownText text={section.body} />
+            )}
+
+            {isChangedSection && previous && (
+              <details className="mt-2">
+                <summary className="text-xs text-slate-400 cursor-pointer">
+                  See previous version of this section
+                </summary>
+                <div className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <MarkdownText
+                    text={previous.body}
+                    paragraphClassName="text-sm leading-relaxed text-slate-500 mb-2 last:mb-0"
+                  />
+                </div>
+              </details>
             )}
 
             {section.cited_source_ids.length > 0 ? (

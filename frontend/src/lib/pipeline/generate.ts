@@ -10,8 +10,40 @@
 // inline below); nothing that calls into src/lib/pipeline/run.ts needs to
 // change when that happens.
 
-import type { ChannelAsset, Channel, ContentRequest, CustomRubricCriterion, Draft, DraftSection, Evaluation, RubricScore, SourceRef } from "../types";
+import type { ChannelAsset, Channel, ContentRequest, CustomRubricCriterion, Draft, DraftSection, Evaluation, PremiseCheckResult, RubricScore, SourceRef } from "../types";
 import { nextId } from "../mock/store";
+
+// Mock stand-in for generate.real.ts's checkIdeaPremise — see that
+// function's doc comment for what this screens for, why, and the exact
+// line it has to draw (assertion vs. examination, empirical fact vs.
+// contested opinion). Mock mode has no real model to ask, so this is
+// deterministic keyword matching against a small, explicitly-incomplete
+// list of well-known false claims — good enough to demo the "should not
+// get past the submit page" behavior end to end, not a real fact-checking
+// system. A debunking/examining-intent signal word exempts a match, the
+// same way a real classifier would reason about it properly.
+const KNOWN_FALSE_CLAIM_PATTERNS: Array<{ pattern: RegExp; category: string }> = [
+  { pattern: /flat earth|earth is flat/i, category: "flat earth" },
+  { pattern: /moon landing (was |is )?(faked|fake|a hoax)/i, category: "moon landing hoax" },
+  { pattern: /vaccines? cause[s]? autism/i, category: "vaccine misinformation" },
+  { pattern: /holocaust (did not|didn't|never) happen/i, category: "holocaust denial" },
+];
+const DEBUNK_INTENT_PATTERN = /debunk|myth|misconception|hoax claim|conspiracy theor|why[\s\S]{0,40}\bbelieve/i;
+
+export function checkIdeaPremise(ideaOrTopic: string): PremiseCheckResult {
+  if (DEBUNK_INTENT_PATTERN.test(ideaOrTopic)) {
+    return { flagged: false, category: null, explanation: "" };
+  }
+  const match = KNOWN_FALSE_CLAIM_PATTERNS.find((p) => p.pattern.test(ideaOrTopic));
+  if (!match) {
+    return { flagged: false, category: null, explanation: "" };
+  }
+  return {
+    flagged: true,
+    category: match.category,
+    explanation: "This directly contradicts well-established scientific/historical consensus.",
+  };
+}
 
 const DEFAULT_RUBRIC_CRITERIA = [
   "Topic Relevance",
@@ -455,8 +487,14 @@ export function prepareChannelAssets(request: ContentRequest, draft: Draft): Cha
       const body = `${draft.title} — ${hook}`;
       content = limit && body.length > limit ? truncateAtWord(body, limit) : body;
     } else {
-      // newsletter
-      content = `Subject: ${draft.title}\n\nHi there,\n\n${draft.sections.map((s) => `${s.heading}\n${s.body}`).join("\n\n")}\n\n— Sent via the Content Ops pipeline (draft, not yet distributed).`;
+      // newsletter — headed "## " so it renders as real subheadings in
+      // ChannelAssetsPanel's NewsletterPreview (MarkdownText), matching how
+      // generate.real.ts's NEWSLETTER_MARKDOWN_RULE now formats the real
+      // thing (2026-09-18, user-reported: "newsletter channel copy is not
+      // formatted to use md" — LinkedIn/X stay plain text on purpose, since
+      // neither platform renders Markdown; a newsletter, sent through an
+      // ESP, does).
+      content = `Subject: ${draft.title}\n\nHi there,\n\n${draft.sections.map((s) => `## ${s.heading}\n${s.body}`).join("\n\n")}\n\n— Sent via the Content Ops pipeline (draft, not yet distributed).`;
     }
 
     return {

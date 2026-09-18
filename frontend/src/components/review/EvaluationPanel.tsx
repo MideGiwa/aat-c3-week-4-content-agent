@@ -1,10 +1,23 @@
 import type { Evaluation } from "@/lib/types";
+import Badge from "../ui/Badge";
 
-const STATUS_STYLE: Record<Evaluation["status"], string> = {
-  pass: "bg-emerald-100 text-emerald-800",
-  revise: "bg-amber-100 text-amber-800",
-  reject: "bg-red-100 text-red-800",
+const STATUS_TONE: Record<Evaluation["status"], "success" | "warning" | "danger"> = {
+  pass: "success",
+  revise: "warning",
+  reject: "danger",
 };
+
+// Threshold-based coloring on each rubric score (PRODUCTION-READINESS-UX-PLAN.md
+// "Now" item 2) — mirrors how Clearscope/Surfer color their content-grading
+// checklists (green/amber/red) rather than making a reviewer do the mental
+// arithmetic on nine plain "7/10"s to figure out which ones actually need a
+// look. Thresholds match this app's own scale (0-10): 8+ is solidly fine,
+// 5-7 is worth a glance, below 5 is the ones actually worth reading closely.
+function scoreColorClass(score: number): string {
+  if (score >= 8) return "text-emerald-700";
+  if (score >= 5) return "text-amber-700";
+  return "text-red-700";
+}
 
 export default function EvaluationPanel({ evaluation }: { evaluation: Evaluation | undefined }) {
   if (!evaluation) {
@@ -17,9 +30,7 @@ export default function EvaluationPanel({ evaluation }: { evaluation: Evaluation
     <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700">Evaluation — round {evaluation.round}</h3>
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLE[evaluation.status]}`}>
-          {evaluation.status}
-        </span>
+        <Badge tone={STATUS_TONE[evaluation.status]}>{evaluation.status}</Badge>
       </div>
 
       <ul className="space-y-1.5 mb-3">
@@ -33,7 +44,7 @@ export default function EvaluationPanel({ evaluation }: { evaluation: Evaluation
                 </span>
               )}
             </span>
-            <span className="font-medium text-slate-800">{s.score}/10</span>
+            <span className={`font-semibold ${scoreColorClass(s.score)}`}>{s.score}/10</span>
           </li>
         ))}
       </ul>

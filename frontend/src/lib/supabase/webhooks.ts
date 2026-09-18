@@ -32,6 +32,7 @@ import { notifyDiscord } from "../discord";
 import { isFutureDateTime, validateNewRequest, type NewRequestInput } from "../validation";
 import type { ActivityAction, Channel, ContentRequest, Draft, Evaluation, SourceRef } from "../types";
 import {
+  checkIdeaPremise,
   evaluateDraft,
   generateDraft,
   planTitleOptions,
@@ -703,6 +704,30 @@ export async function handleContentRequestWebhook(
   const errors = validateNewRequest(input);
   if (errors.length > 0) {
     return { ok: false, errors };
+  }
+
+  // Premise check (2026-09-18, user-requested: "it should not get past the
+  // submit request page") — see generate.real.ts's checkIdeaPremise doc
+  // comment. Runs synchronously on the submit path itself (on the small,
+  // fast model — this one call is the only added latency), before any row
+  // is inserted: a flagged idea never becomes a request at all, exactly
+  // like every other validateNewRequest failure above, and costs nothing
+  // beyond this one classification call — no research, no drafting, no
+  // reviewer ever sees it.
+  const premiseCheck = await checkIdeaPremise(input.idea_or_topic);
+  if (premiseCheck.flagged) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "idea_or_topic",
+          message:
+            `This idea's premise${premiseCheck.category ? ` (${premiseCheck.category})` : ""} conflicts with ` +
+            `established facts. ${premiseCheck.explanation} If you're examining or debunking this claim rather ` +
+            `than asserting it, rephrase the topic to make that clear.`,
+        },
+      ],
+    };
   }
 
   const supabase = getSupabaseServerClient();

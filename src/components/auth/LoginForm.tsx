@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Button from "../ui/Button";
-import { TextInput } from "../ui/TextInput";
 
 type Mode = "magic_link" | "password";
 
@@ -123,51 +121,57 @@ export default function LoginForm({ redirectTo }: { redirectTo: string }) {
         <form onSubmit={handleMagicLinkSubmit} className="flex flex-col gap-3">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <TextInput
+            <input
               type="email"
               required
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
+              className="w-full rounded-md border border-slate-300 text-sm p-2"
             />
           </div>
-          <Button type="submit" className="self-start" disabled={!email} loading={status === "sending"}>
+          <button
+            type="submit"
+            disabled={status === "sending" || !email}
+            className="self-start text-sm font-medium bg-accent-600 text-white px-4 py-2 rounded-md hover:bg-accent-700 disabled:opacity-50"
+          >
             {status === "sending" ? "Sending…" : "Send magic link"}
-          </Button>
+          </button>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </form>
       ) : (
         <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <TextInput
+            <input
               type="email"
               required
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
+              className="w-full rounded-md border border-slate-300 text-sm p-2"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-            <TextInput
+            <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              className="w-full rounded-md border border-slate-300 text-sm p-2"
             />
           </div>
-          <Button
+          <button
             type="submit"
-            className="self-start"
-            disabled={!email || !password}
-            loading={status === "sending"}
+            disabled={status === "sending" || !email || !password}
+            className="self-start text-sm font-medium bg-accent-600 text-white px-4 py-2 rounded-md hover:bg-accent-700 disabled:opacity-50"
           >
             {status === "sending" ? "Signing in…" : "Sign in"}
-          </Button>
+          </button>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </form>
       )}

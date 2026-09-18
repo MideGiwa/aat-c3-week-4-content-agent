@@ -1,5 +1,6 @@
 import type { RequestStatus } from "@/lib/types";
 import { isFailureStatus, isTerminalRejection } from "@/lib/board";
+import Badge from "./ui/Badge";
 
 const LABELS: Record<RequestStatus, string> = {
   intake_complete: "Queued for research",
@@ -18,18 +19,12 @@ export default function StatusBadge({ status }: { status: RequestStatus }) {
   const isRejected = isTerminalRejection(status);
   const isApproved = status === "approved" || status === "published";
 
-  const classes = isFailure
-    ? "bg-red-100 text-red-800"
-    : isRejected
-    ? "bg-slate-200 text-slate-600"
-    : isApproved
-    ? "bg-emerald-100 text-emerald-800"
-    : "bg-slate-100 text-slate-700";
+  const tone = isFailure ? "danger" : isRejected ? "neutral" : isApproved ? "success" : "neutral";
 
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${classes}`}>
+    <Badge tone={tone}>
       {isFailure && <span aria-hidden>⚠️</span>}
       {LABELS[status]}
-    </span>
+    </Badge>
   );
 }

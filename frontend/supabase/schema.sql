@@ -327,9 +327,17 @@ create index stage_logs_request_id_idx on stage_logs(request_id);
 -- using SUPABASE_SERVICE_ROLE_KEY (bypasses RLS by design — see that
 -- doc's "No table above is directly writable by the browser's Supabase
 -- session"). These SELECT policies are what actually scope a logged-in
--- session's reads now that Auth is wired up (src/lib/supabase/routeClient.ts)
--- — a submitter sees their own requests, a reviewer sees what they're
--- assigned to, and is_admin() sees everything.
+-- session's reads now that Auth is wired up (src/lib/supabase/routeClient.ts).
+--
+-- 2026-09-18 (revised): content is shared, not siloed per-owner — every
+-- signed-in profile can see every request and everything attached to it
+-- (sources, drafts, evaluations, channel assets, the publishing queue,
+-- review decisions, activity log), not just its submitter or assigned
+-- reviewers. `is_admin()` and the is_request_reviewer/is_request_submitter
+-- functions below are kept (still used by other checks, and harmless to
+-- leave defined) but no longer gate SELECT — the policies just require a
+-- real session (`auth.uid() is not null`). stage_logs is the one exception:
+-- it's internal debug telemetry, not app content, so it stays admin-only.
 -- ============================================================
 alter table requests enable row level security;
 alter table request_reviewers enable row level security;
@@ -375,111 +383,27 @@ language sql stable security definer set search_path = '' as $$
   );
 $$;
 
-create policy "requests_select" on requests for select using (
-  submitted_by = auth.uid()
-  or is_request_reviewer(requests.id, auth.uid())
-  or is_admin(auth.uid())
-);
+create policy "requests_select" on requests for select using (auth.uid() is not null);
 
-create policy "request_reviewers_select" on request_reviewers for select using (
-  reviewer_id = auth.uid()
-  or is_request_submitter(request_reviewers.request_id, auth.uid())
-  or is_admin(auth.uid())
-);
+create policy "request_reviewers_select" on request_reviewers for select using (auth.uid() is not null);
 
-create policy "request_attachments_select" on request_attachments for select using (
-  exists (
-    select 1 from requests r
-    where r.id = request_attachments.request_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "request_attachments_select" on request_attachments for select using (auth.uid() is not null);
 
-create policy "sources_select" on sources for select using (
-  exists (
-    select 1 from requests r
-    where r.id = sources.request_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "sources_select" on sources for select using (auth.uid() is not null);
 
-create policy "source_chunks_select" on source_chunks for select using (
-  exists (
-    select 1 from sources s
-    join requests r on r.id = s.request_id
-    where s.id = source_chunks.source_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "source_chunks_select" on source_chunks for select using (auth.uid() is not null);
 
-create policy "drafts_select" on drafts for select using (
-  exists (
-    select 1 from requests r
-    where r.id = drafts.request_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "drafts_select" on drafts for select using (auth.uid() is not null);
 
-create policy "evaluations_select" on evaluations for select using (
-  exists (
-    select 1 from drafts d
-    join requests r on r.id = d.request_id
-    where d.id = evaluations.draft_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "evaluations_select" on evaluations for select using (auth.uid() is not null);
 
-create policy "channel_assets_select" on channel_assets for select using (
-  exists (
-    select 1 from requests r
-    where r.id = channel_assets.request_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "channel_assets_select" on channel_assets for select using (auth.uid() is not null);
 
-create policy "publishing_queue_select" on publishing_queue for select using (
-  exists (
-    select 1 from channel_assets ca
-    join requests r on r.id = ca.request_id
-    where ca.id = publishing_queue.channel_asset_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "publishing_queue_select" on publishing_queue for select using (auth.uid() is not null);
 
-create policy "review_decisions_select" on review_decisions for select using (
-  exists (
-    select 1 from drafts d
-    join requests r on r.id = d.request_id
-    where d.id = review_decisions.draft_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "review_decisions_select" on review_decisions for select using (auth.uid() is not null);
 
-create policy "activity_log_select" on activity_log for select using (
-  exists (
-    select 1 from requests r
-    where r.id = activity_log.request_id
-      and (r.submitted_by = auth.uid()
-        or exists (select 1 from request_reviewers rr where rr.request_id = r.id and rr.reviewer_id = auth.uid())
-        or is_admin(auth.uid()))
-  )
-);
+create policy "activity_log_select" on activity_log for select using (auth.uid() is not null);
 
 -- stage_logs is machine-facing debug telemetry, not something a submitter
 -- or reviewer has any reason to see (unlike activity_log above) — admin

@@ -97,6 +97,23 @@ export interface ContentRequest {
   updated_at: string;
 }
 
+/** Result of screening a raw idea/topic before a request is ever created
+ * (2026-09-18, user-requested: "it should not get past the submit request
+ * page"). Deliberately narrow — see generate.ts/generate.real.ts's
+ * checkIdeaPremise doc comments — this only judges a claim asserted as
+ * settled fact against overwhelming scientific/historical/empirical
+ * consensus (flat earth, anti-vaccine claims stated as fact, etc.), never
+ * political opinions, ethical positions, or other genuinely contested
+ * viewpoints, and never an idea that examines or debunks a false belief
+ * rather than asserting it. */
+export interface PremiseCheckResult {
+  flagged: boolean;
+  /** A short label for what was flagged (e.g. "flat earth"), only set when flagged. */
+  category: string | null;
+  /** One sentence explaining the decision — shown to the submitter verbatim when flagged. */
+  explanation: string;
+}
+
 export interface SourceRef {
   id: string;
   request_id: string;

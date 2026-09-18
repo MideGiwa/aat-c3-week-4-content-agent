@@ -17,6 +17,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "../ui/Button";
 
 export default function ContentAngleSelector({
   requestId,
@@ -105,10 +106,13 @@ export default function ContentAngleSelector({
                 )}
               </div>
               {!isChosen && !locked && (
-                <button
+                <Button
+                  variant="accentOutline"
+                  size="sm"
+                  className="shrink-0"
                   disabled={submittingIndex !== null}
+                  loading={isSubmittingThis}
                   onClick={() => selectOption(idx as 0 | 1)}
-                  className="shrink-0 text-xs font-medium text-accent-700 border border-accent-300 px-2 py-1 rounded-md hover:bg-accent-50 disabled:opacity-50"
                 >
                   {isSubmittingThis
                     ? hasDraft
@@ -117,7 +121,7 @@ export default function ContentAngleSelector({
                     : hasDraft
                       ? "Switch to this"
                       : "Generate this instead"}
-                </button>
+                </Button>
               )}
             </div>
           );

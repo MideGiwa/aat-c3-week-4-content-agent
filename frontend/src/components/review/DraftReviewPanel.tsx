@@ -50,6 +50,17 @@ export default function DraftReviewPanel({
     .at(-1);
   const isActive = selectedDraft.id === activeDraft.id;
 
+  // The immediately-prior version in THIS angle's own revision chain
+  // (PRODUCTION-READINESS-UX-PLAN.md "Next" item 3) — matched by
+  // option_label, not just "version - 1", since switching angles means
+  // option A and option B each have their own independent version
+  // sequence, not one shared counter that alternates between them.
+  // undefined for the first version of an angle — DraftViewer treats that
+  // as "nothing to diff against" rather than showing every section as new.
+  const previousDraft = drafts
+    .filter((d) => d.option_label === selectedDraft.option_label && d.version < selectedDraft.version)
+    .sort((a, b) => b.version - a.version)[0];
+
   return (
     <div className="space-y-4">
       {drafts.length > 1 && (
@@ -68,6 +79,7 @@ export default function DraftReviewPanel({
           sources={sources}
           editable={isActive && !latestDecision}
           requestId={requestId}
+          previousSections={previousDraft?.sections}
         />
       </div>
 

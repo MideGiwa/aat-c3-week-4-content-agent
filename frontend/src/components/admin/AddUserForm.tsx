@@ -2,6 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "../ui/Button";
+import Checkbox from "../ui/Checkbox";
+import { TextInput } from "../ui/TextInput";
 
 const ROLE_OPTIONS = ["content_manager", "reviewer", "admin"] as const;
 
@@ -58,41 +61,28 @@ export default function AddUserForm() {
     >
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-        <input
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        />
+        <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-        <input
-          required
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        />
+        <TextInput required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Roles</label>
         <div className="flex gap-3">
           {ROLE_OPTIONS.map((role) => (
-            <label key={role} className="flex items-center gap-1.5 text-sm text-slate-700">
-              <input type="checkbox" checked={roles.includes(role)} onChange={() => toggleRole(role)} />
-              {role}
-            </label>
+            <Checkbox
+              key={role}
+              label={role}
+              checked={roles.includes(role)}
+              onChange={() => toggleRole(role)}
+            />
           ))}
         </div>
       </div>
-      <button
-        type="submit"
-        disabled={status === "saving"}
-        className="self-start text-sm font-medium bg-accent-600 text-white px-3 py-1.5 rounded-md hover:bg-accent-700 disabled:opacity-50"
-      >
+      <Button type="submit" size="sm" loading={status === "saving"} className="self-start">
         {status === "saving" ? "Sending invite…" : "Invite user"}
-      </button>
+      </Button>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {success && <p className="text-sm text-emerald-600">{success}</p>}
     </form>

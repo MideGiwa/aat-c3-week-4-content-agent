@@ -4,6 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ReviewDecision } from "@/lib/types";
 import { isFutureDateTime } from "@/lib/validation";
+import Button from "../ui/Button";
+import DateTimeField from "../ui/DateTimeField";
+import { Textarea } from "../ui/TextInput";
 
 export default function ReviewActions({
   requestId,
@@ -114,44 +117,49 @@ export default function ReviewActions({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
-        <button
+        <Button
+          variant="success"
+          size="sm"
           disabled={submitting}
           onClick={() => setPendingAction(pendingAction === "approve" ? null : "approve")}
-          className="text-sm font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700 disabled:opacity-50"
         >
           Approve
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="warning"
+          size="sm"
           disabled={submitting}
           onClick={() => setPendingAction(pendingAction === "request_changes" ? null : "request_changes")}
-          className="text-sm font-medium bg-amber-500 text-white px-3 py-1.5 rounded-md hover:bg-amber-600 disabled:opacity-50"
         >
           Request Changes
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
           disabled={submitting}
           onClick={() => setPendingAction(pendingAction === "reject" ? null : "reject")}
-          className="text-sm font-medium bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 disabled:opacity-50"
         >
           Reject
-        </button>
+        </Button>
       </div>
 
       {pendingAction === "approve" && (
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <label className="block text-xs font-medium text-slate-600 mb-1.5">Publishing</label>
           <div className="flex gap-4 mb-2">
-            <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none">
               <input
                 type="radio"
+                className="h-4 w-4 accent-accent-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-1"
                 checked={publishTiming === "immediately"}
                 onChange={() => setPublishTiming("immediately")}
               />
               Publish immediately
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none">
               <input
                 type="radio"
+                className="h-4 w-4 accent-accent-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-1"
                 checked={publishTiming === "scheduled"}
                 onChange={() => setPublishTiming("scheduled")}
               />
@@ -160,29 +168,21 @@ export default function ReviewActions({
           </div>
           {publishTiming === "scheduled" && (
             <div className="mb-2">
-              <input
+              <DateTimeField
                 type="datetime-local"
                 value={scheduledFor}
                 onChange={(e) => setScheduledFor(e.target.value)}
-                className="rounded-md border border-slate-300 text-sm p-2"
               />
               <p className="mt-1 text-xs text-slate-400">Past dates and times can&apos;t be selected.</p>
             </div>
           )}
           <div className="mt-2 flex gap-2">
-            <button
-              disabled={submitting}
-              onClick={() => submit("approve")}
-              className="text-sm font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700 disabled:opacity-50"
-            >
+            <Button variant="success" size="sm" loading={submitting} onClick={() => submit("approve")}>
               {submitting ? "Approving…" : "Confirm Approve"}
-            </button>
-            <button
-              onClick={() => setPendingAction(null)}
-              className="text-sm text-slate-500 px-3 py-1.5"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setPendingAction(null)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -194,31 +194,28 @@ export default function ReviewActions({
               ? "Why is this being rejected? (this ends the request — no auto-regeneration)"
               : "What needs to change?"}
           </label>
-          <textarea
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            className="w-full rounded-md border border-slate-300 text-sm p-2"
             placeholder="Add a note for the record..."
           />
           <div className="mt-2 flex gap-2">
-            <button
-              disabled={submitting}
+            <Button
+              variant={pendingAction === "reject" ? "danger" : "warning"}
+              size="sm"
+              loading={submitting}
               onClick={() => submit(pendingAction)}
-              className="text-sm font-medium bg-slate-800 text-white px-3 py-1.5 rounded-md hover:bg-slate-900 disabled:opacity-50"
             >
               {submitting
                 ? pendingAction === "reject"
                   ? "Rejecting…"
                   : "Requesting changes…"
                 : `Confirm ${pendingAction === "reject" ? "Reject" : "Request Changes"}`}
-            </button>
-            <button
-              onClick={() => setPendingAction(null)}
-              className="text-sm text-slate-500 px-3 py-1.5"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setPendingAction(null)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}

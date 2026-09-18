@@ -23,9 +23,11 @@ import type {
   Draft,
   DraftSection,
   Evaluation,
+  PremiseCheckResult,
   RubricScore,
   SourceRef,
 } from "../types";
+import { ANTHROPIC_FAST_MODEL } from "../config";
 import { structuredCall } from "../ai/anthropic";
 import { scrapeUrl, type ScrapeFailureReason, type ScrapedPage } from "../ai/firecrawl";
 import { searchWeb } from "../ai/tavily";
@@ -128,35 +130,136 @@ const RUBRIC_DESCRIPTION = `
 - Completeness: includes every required section or channel asset.
 `.trim();
 
-// Condensed from assets/seo-best-practices.md.
+// Condensed from assets/seo-best-practices.md. The H1/H2/H3 structure this
+// describes is split across two places: the title (rendered as the
+// article's one H1) and each section's `heading` (rendered as an H2) are
+// separate JSON fields the app itself turns into real headings — see
+// DraftViewer.tsx. Within a section's `body`, though, "H3 subheaders where
+// needed" has nowhere else to live, so `body` is allowed to contain
+// Markdown (### subheadings, **bold**, and -/1. lists) and DraftViewer
+// renders it as actual formatting via MarkdownText.tsx, not literal
+// asterisks and hash marks (2026-09-18, user-reported: "the formatted view
+// is what should be shown, not with ** and #").
 const SEO_GUIDELINES = `
 - Include the primary keyword (drawn from the content idea) in the title and in the first 100 words.
 - Use relevant secondary keywords in the body and section headers.
-- One H1 (the title), clear section headers, short paragraphs (2-3 sentences).
+- One H1 (the title) and clear H2 section headers — both are separate fields you provide, not part of body text.
+- Short paragraphs (2-3 sentences). Use an H3 subheading inside body (Markdown "### text") only where a section
+  genuinely needs a deeper break; use **bold** and "-"/"1." lists in body sparingly, where they aid skimmability.
 - Include 2-3 relevant internal or external links where they'd naturally belong.
 - Keep claims grounded in the reviewed source material — nothing invented.
 `.trim();
 
-// Condensed from assets/channel-formatting-rules.md.
+// Condensed from assets/channel-formatting-rules.md. NO_MARKDOWN_RULE is
+// appended to LinkedIn's and X's prompts below (2026-09-18, user-reported:
+// "the formatted view is what should be shown, not with ** and #") — neither
+// platform renders Markdown, so `**bold**` or a `#`/`##` heading in the
+// actual published post would show up as literal asterisks and hash marks to
+// a real reader.
+//
+// Newsletter is deliberately NOT under this rule (2026-09-18, user-reported:
+// "newsletter channel copy is not formatted to use md") — unlike a LinkedIn
+// or X post, an email newsletter is sent through an ESP that renders real
+// formatting, and assets/channel-formatting-rules.md's own Email Newsletter
+// section explicitly asks for a value section that's "easy to skim with
+// subheadings or bullets," which is exactly the structure Markdown is for.
+// So the newsletter is generated WITH Markdown (NEWSLETTER_MARKDOWN_RULE)
+// and rendered formatted in ChannelAssetsPanel's NewsletterPreview via
+// MarkdownText.tsx — the same "generate it, then actually render it"
+// treatment the article draft already gets, just scoped to this one channel.
+// LinkedIn/X previews stay plain text, matching what a reviewer would
+// actually see once published.
+const NO_MARKDOWN_RULE =
+  "This is the literal text that gets published as-is — do NOT use Markdown syntax (no **bold**, no _italic_, " +
+  "no #/## headings, no markdown-style `-`/`*` list markers). If you need emphasis, use word choice, capitalization, " +
+  "or an emoji sparingly; if you need a list, write it as short lines or use a plain bullet character like \"•\".";
+
+const NEWSLETTER_MARKDOWN_RULE =
+  "This IS rendered as formatted output before it reaches a reader (an ESP or this app's own preview), not " +
+  "published as raw text — so use real Markdown for structure: \"##\" for the 1-2 subheadings that break up the " +
+  "main value section, \"-\" for bullet lists, and **bold** sparingly for emphasis. Do not use \"#\"/H1 (the " +
+  "subject line already serves that role) or \"###\"/H3.";
+
 const CHANNEL_FORMATTING_RULES: Record<Channel, string> = {
   linkedin: `
 - Use the PAS structure: problem, agitation, solution.
-- Keep paragraphs short. Use bullets or simple symbols when they improve clarity.
+- Keep paragraphs short. Use "•" or simple symbols when they improve clarity — never Markdown list markers.
 - A small number of relevant emojis is fine if it fits a professional voice — don't overdo it.
 - End with a clear call to action.
+- ${NO_MARKDOWN_RULE}
 `.trim(),
   x: `
 - Lead with the main benefit, insight, or hook. One core idea only.
 - Use line breaks for readability. No more than 1-2 relevant hashtags.
 - Must fit within 280 characters total.
+- ${NO_MARKDOWN_RULE}
 `.trim(),
   newsletter: `
-- Strong subject line with a clear benefit or point of intrigue.
-- Short intro (1-3 sentences), then a skimmable main section with subheadings or bullets.
+- Start with a line literally beginning "Subject: " followed by a strong subject line with a clear benefit or point of intrigue.
+- Short intro (1-3 sentences), then a main value section that's easy to skim — use "##" subheadings and/or "-" bullets to break it up.
+- Optionally, one secondary item (a quick tip, link, or update).
 - Include a clear call to action and a friendly sign-off.
 - Total length between 250 and 600 words.
+- ${NEWSLETTER_MARKDOWN_RULE}
 `.trim(),
 };
+
+/** Screens a raw idea/topic BEFORE a request is ever created (2026-09-18,
+ * user-requested: "it should not get past the submit request page") — the
+ * orchestrator (supabase/webhooks.ts's handleContentRequestWebhook) calls
+ * this synchronously, right after validateNewRequest passes and before any
+ * row is inserted, so a flagged idea costs one small classification call
+ * and nothing else — no research, no drafting, no reviewer ever has to see
+ * it. Runs on ANTHROPIC_FAST_MODEL rather than the main pipeline model
+ * (user-requested: "use a smaller model for that check") — this is a
+ * narrow yes/no judgment, not a generation task, so it doesn't need the
+ * bigger model's reasoning budget, and it sits on the submit request path
+ * so latency matters more here than anywhere else in the pipeline.
+ *
+ * Deliberately narrow, per PremiseCheckResult's doc comment: only flags a
+ * claim ASSERTED as settled fact that conflicts with overwhelming
+ * scientific/historical/empirical consensus (flat earth, anti-vaccine
+ * claims stated as fact, moon-landing-hoax, Holocaust denial, and similar).
+ * It must never flag political opinions, ethical positions, or any other
+ * genuinely contested-but-not-empirically-settled viewpoint, and it must
+ * never flag an idea that examines, reports on, or debunks a false belief
+ * rather than asserting it ("why some people believe the Earth is flat" is
+ * a legitimate, unflagged topic; "the Earth is flat and this is why" is
+ * not). The prompt below is what actually draws that line — see it before
+ * changing the examples list, since a badly-worded prompt here either lets
+ * real misinformation through or blocks legitimate contrarian/investigative
+ * journalism, both of which are real failure modes for this feature. */
+export async function checkIdeaPremise(ideaOrTopic: string): Promise<PremiseCheckResult> {
+  return structuredCall({
+    label: "premise check",
+    model: ANTHROPIC_FAST_MODEL,
+    system:
+      "You screen raw content ideas submitted to a content team's pipeline, before any research or drafting " +
+      "happens. Flag ONLY an idea whose central premise ASSERTS, as settled fact, a claim that conflicts with " +
+      "overwhelming scientific, historical, or empirical consensus — for example: the Earth is flat, vaccines " +
+      "cause autism, the moon landing was faked, the Earth is only a few thousand years old, the Holocaust did " +
+      "not happen. Do NOT flag: an idea that examines, reports on, critiques, or debunks such a belief rather " +
+      'than asserting it (e.g. "why some people believe the Earth is flat", "debunking flat-earth claims" — ' +
+      "these are legitimate, unflagged topics); satire; political opinions, ethical positions, or any other " +
+      "contested-but-not-empirically-settled viewpoint, however controversial; and anything vague or ambiguous " +
+      "— only flag a clear, confident factual assertion. When genuinely unsure, do not flag. Respond with ONLY a " +
+      'JSON object: {"flagged": boolean, "category": string or null (a short label like "flat earth", set only ' +
+      'when flagged), "explanation": string (one sentence, plain language, explaining the decision either way)}.',
+    user: ideaOrTopic,
+    maxTokens: 300,
+    validate: (json): PremiseCheckResult => {
+      const obj = json as Record<string, unknown>;
+      if (typeof obj?.flagged !== "boolean") {
+        throw new Error('expected a boolean "flagged" field from the premise check');
+      }
+      return {
+        flagged: obj.flagged,
+        category: typeof obj.category === "string" ? obj.category : null,
+        explanation: typeof obj.explanation === "string" ? obj.explanation : "",
+      };
+    },
+  });
+}
 
 /** Research & Retrieval + Source Curation (CONTENT-PIPELINE-SPEC.md §1-2),
  * done together the same way the mock does: candidates are gathered

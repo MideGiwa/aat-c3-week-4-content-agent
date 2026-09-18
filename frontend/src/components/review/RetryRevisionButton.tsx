@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "../ui/Button";
 
 // Shown in the "needs_manual_revision" banner on /requests/[id] once the
 // background revision has actually failed (request.failure_reason set) —
@@ -43,14 +44,9 @@ export default function RetryRevisionButton({ requestId }: { requestId: string }
 
   return (
     <div className="mt-1.5">
-      <button
-        type="button"
-        disabled={submitting}
-        onClick={retry}
-        className="text-xs font-medium text-red-700 border border-red-300 px-2 py-1 rounded-md hover:bg-red-100 disabled:opacity-50"
-      >
+      <Button type="button" variant="dangerOutline" size="sm" loading={submitting} onClick={retry}>
         {submitting ? "Retrying…" : "Retry the revision"}
-      </button>
+      </Button>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );

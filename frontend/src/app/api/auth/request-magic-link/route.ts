@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, USE_MOCK_DATA } from "@/lib/config";
+import { USE_MOCK_DATA } from "@/lib/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseRouteClient } from "@/lib/supabase/routeClient";
 
 // Explicit existence check before ever calling signInWithOtp, rather than
 // relying on that call's own shouldCreateUser:false behavior alone — an
@@ -38,7 +38,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  // Use the cookie-aware @supabase/ssr client here, not a plain
+  // @supabase/supabase-js createClient. The plain client defaults to
+  // implicit-flow auth links (a #access_token=... hash fragment that never
+  // reaches the server), which /auth/callback can't do anything with since
+  // it only handles a PKCE `?code=` param — the browser was left carrying a
+  // stale hash fragment through the resulting redirect back to /login.
+  // getSupabaseRouteClient() defaults to PKCE and persists the code_verifier
+  // to a cookie on this response, so the emailed link carries a `?code=`
+  // that /auth/callback's exchangeCodeForSession(code) can actually use.
+  const supabase = getSupabaseRouteClient();
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: { shouldCreateUser: false, emailRedirectTo: redirectTo },
