@@ -454,11 +454,24 @@ export type RetryRevisionResult =
 // fails (no real APIs), so this mostly exists here for interface parity
 // with the real implementation and so the button has something to hit in
 // mock-mode demos of the failure UI.
+// 2026-09-18: a `waitUntil`'d revision doesn't only fail loudly (caught,
+// `failure_reason` set) — it can also just go silent forever with
+// `failure_reason` still null, if whatever was running it got killed
+// mid-flight (a local `next dev` restart is the easy way to hit this; in
+// production, a redeploy landing mid-request would do the same). That
+// state is indistinguishable from "still legitimately in progress" by
+// looking at the request alone, so this guard also accepts a retry once
+// enough real time has passed that it can no longer plausibly still be
+// running — matching the review-action/retry-revision routes' own
+// `maxDuration = 300`, since Vercel would have killed it by then anyway.
+const REVISION_STALE_MS = 5 * 60 * 1000;
+
 export function handleRetryRevisionWebhook(input: RetryRevisionInput): RetryRevisionResult {
   const store = getStore();
   const request = store.requests.find((r) => r.id === input.request_id);
   if (!request) return { ok: false, reason: "not_found" };
-  if (request.status !== "needs_manual_revision" || !request.failure_reason) {
+  const isStale = Date.now() - new Date(request.updated_at).getTime() > REVISION_STALE_MS;
+  if (request.status !== "needs_manual_revision" || (!request.failure_reason && !isStale)) {
     return { ok: false, reason: "not_stalled" };
   }
 

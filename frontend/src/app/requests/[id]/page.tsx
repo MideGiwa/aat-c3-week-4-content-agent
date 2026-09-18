@@ -56,10 +56,20 @@ export default async function RequestDetailPage({
       ? activity.find((a) => a.action === "request_changes")
       : undefined;
   // The automatic revision runs in the background (waitUntil) — stalled
-  // means it already failed rather than still being in flight, so
-  // PipelineProgress should stop polling and this banner should show the
-  // failure instead of "applying changes…" (2026-09-18 fix).
-  const revisionStalled = request.status === "needs_manual_revision" && !!request.failure_reason;
+  // means it's no longer plausibly still running, so PipelineProgress
+  // should stop polling and this banner should show the failure instead of
+  // "applying changes…" (2026-09-18 fix). That's not only a caught failure
+  // (failure_reason set): a background job can also die silently with
+  // failure_reason still null if the process running it was killed
+  // mid-flight (a local `next dev` restart is the easy way to hit this) —
+  // so anything sitting here longer than the route could possibly still be
+  // running (REVISION_STALE_MS, matching maxDuration=300) counts as stalled
+  // too, matching the same staleness guard on the retry-revision webhook
+  // itself (2026-09-18, second fix same day).
+  const REVISION_STALE_MS = 5 * 60 * 1000;
+  const revisionStalled =
+    request.status === "needs_manual_revision" &&
+    (!!request.failure_reason || Date.now() - new Date(request.updated_at).getTime() > REVISION_STALE_MS);
 
   return (
     <div>
@@ -100,7 +110,9 @@ export default async function RequestDetailPage({
           </p>
           {revisionStalled && (
             <>
-              <p className="mt-1.5 break-words text-red-700">⚠ {request.failure_reason}</p>
+              <p className="mt-1.5 break-words text-red-700">
+                ⚠ {request.failure_reason ?? "This is taking longer than expected — it may have stalled."}
+              </p>
               <RetryRevisionButton requestId={request.id} />
             </>
           )}

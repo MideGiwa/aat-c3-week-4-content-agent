@@ -21,7 +21,13 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, USE_MOCK_DATA } from "./lib/config";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
+// /api/auth/request-magic-link has to be reachable with NO session — it's
+// the call the sign-in form itself makes. Leaving it out (2026-09-18 bug)
+// meant middleware redirected that POST to /login before it ever ran,
+// fetch silently followed the redirect, and the client tried to JSON-parse
+// an HTML page back — an uncaught parse error that left the sign-in
+// button stuck on "Sending…" forever with no error ever shown.
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/api/auth/request-magic-link"];
 
 export async function middleware(request: NextRequest) {
   if (USE_MOCK_DATA) return NextResponse.next();

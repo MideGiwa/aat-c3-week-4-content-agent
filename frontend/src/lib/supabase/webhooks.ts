@@ -371,9 +371,33 @@ async function runInitialPipeline(supabase: SupabaseClient, request: ContentRequ
     return;
   }
 
-  const { sources, chunks, scrapeFailures } = researchResult;
+  const { sources, chunks, scrapeFailures, failedSources } = researchResult;
   if (scrapeFailures.length > 0) {
     await logScrapeFailures(supabase, request.id, scrapeFailures);
+  }
+
+  // Insert failed-candidate stub rows before the empty-sources check below
+  // — a reviewer should be able to see exactly which URLs were tried and
+  // why they didn't make it even in the total-failure case (every
+  // candidate blocked/paywalled/dead), where the request lands on
+  // research_failed and never reaches a draft at all. These are always
+  // selected: false and carry no raw_text, so they can never be cited from
+  // or mistaken for a real source (2026-09-18, see researchAndCurateSources'
+  // doc comment).
+  if (failedSources.length > 0) {
+    const { error: failedSourcesError } = await supabase.from("sources").insert(
+      failedSources.map((s) => ({
+        id: s.id,
+        request_id: s.request_id,
+        url: s.url,
+        title: s.title,
+        raw_text: null,
+        retrieved_at: s.retrieved_at,
+        selected: false,
+        relevance_note: s.relevance_note,
+      }))
+    );
+    if (failedSourcesError) throw failedSourcesError;
   }
 
   if (sources.length === 0) {
@@ -1155,6 +1179,12 @@ export async function handleManualEditWebhook(input: ManualEditInput): Promise<M
   return { ok: true, new_draft_id: resultDraftId };
 }
 
+// How long a needs_manual_revision request can sit with no failure_reason
+// before it's treated as dead rather than still in progress — see the
+// staleness comment inside handleRetryRevisionWebhook below. Matches this
+// route's own maxDuration=300.
+const REVISION_STALE_MS = 5 * 60 * 1000;
+
 // Real-mode counterpart to mock/webhooks.ts's handleRetryRevisionWebhook —
 // see that function's doc comment for why a dedicated retry is needed here
 // (ReviewActions can't just "Request Changes" again against the same draft
@@ -1175,7 +1205,14 @@ export async function handleRetryRevisionWebhook(
   if (!requestRow) return { ok: false, reason: "not_found" };
   const request = rowToContentRequest(requestRow as RequestRow);
 
-  if (request.status !== "needs_manual_revision" || !request.failure_reason) {
+  // See mock/webhooks.ts's handleRetryRevisionWebhook doc comment: a
+  // waitUntil'd revision can also die silently, with failure_reason never
+  // set, if the function instance running it is killed mid-flight — so
+  // this also accepts a retry once it's been stuck long enough that it
+  // can't plausibly still be running (matches this route's own
+  // maxDuration=300).
+  const isStale = Date.now() - new Date(request.updated_at).getTime() > REVISION_STALE_MS;
+  if (request.status !== "needs_manual_revision" || (!request.failure_reason && !isStale)) {
     return { ok: false, reason: "not_stalled" };
   }
   if (!request.chosen_draft_id) return { ok: false, reason: "not_found" };
